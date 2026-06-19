@@ -240,7 +240,7 @@ export default function App() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Hotel Ops</h1>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Dashboard</h1>
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
             {lastSync ? `Last sync ${timeAgo(lastSync)}` : 'Loading...'}
           </div>
