@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API = 'http://localhost:3001';
+const API = 'https://endearing-blessing-production-c742.up.railway.app';
 
 const COLS = [
   { key: 'new',         label: 'New',        color: '#6b7280' },
