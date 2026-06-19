@@ -82,7 +82,7 @@ router.get('/callback', async (req, res) => {
     req.session.gmailEmail = gmailEmail;
 
     console.log(`[gmail] Setup complete for ${gmailEmail}`);
-    res.redirect('/dashboard');
+    res.redirect(`${process.env.CLIENT_URL}`);
   } catch (err) {
     console.error('[gmail] Callback error:', err);
     res.redirect('/?error=setup_failed');
