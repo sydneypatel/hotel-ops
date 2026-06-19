@@ -13,9 +13,13 @@ const PORT = process.env.PORT || 3001;
 const pgSession = require('connect-pg-simple')(session);
 const { db } = require('./lib/db');
 
+
+
+app.set('trust proxy', 1);
+
 // --- Middleware ---
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: process.env.CLIENT_URL,
   credentials: true,
 }));
 
@@ -34,8 +38,9 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: true,
     httpOnly: true,
+    sameSite: 'none',  // ← add this
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
