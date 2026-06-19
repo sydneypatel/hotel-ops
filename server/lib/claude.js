@@ -50,11 +50,10 @@ ${emailData.body || emailData.snippet}`;
 
   const text = response.content[0].text;
   const clean = text.replace(/```json\n?|```/g, '').trim();
-  
+
   try {
     return JSON.parse(clean);
   } catch {
-    // Fallback if parsing fails
     console.error('Failed to parse classification:', clean);
     return {
       hotel: 'Unknown',
@@ -67,4 +66,62 @@ ${emailData.body || emailData.snippet}`;
   }
 }
 
-module.exports = { classifyEmail };
+async function generateBriefing(emails, hotelNames = []) {
+  const now = new Date().toLocaleString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1500,
+    messages: [{
+      role: 'user',
+      content: `You are an AI chief of staff for a hotel management company. It is ${now}.
+
+Review the active inbox below and generate a briefing. Be specific — name the hotels and issues. Be direct, no fluff.
+
+Return ONLY valid JSON (no markdown, no preamble):
+{
+  "headline": "1 sentence situation overview — specific, names hotels and key issues",
+  "urgent": ["specific action needed right now with hotel name", "another urgent action"],
+  "todaysPlan": ["1. First priority — hotel name + specific action", "2. Second priority", "3. Third"],
+  "watchList": ["thing that could escalate if not monitored — be specific"],
+  "clear": "1 sentence on what is under control or can wait"
+}
+
+Active emails (${emails.length} total, excluding resolved):
+${JSON.stringify(emails.map(e => ({
+  subject: e.subject,
+  sender: e.sender,
+  hotel: e.hotel,
+  category: e.category,
+  priority: e.priority,
+  summary: e.summary,
+  actionItems: e.action_items,
+  requiresResponse: e.requires_response,
+  status: e.status,
+})))}
+
+Known hotel properties: ${hotelNames.length ? hotelNames.join(', ') : 'not configured'}`
+    }],
+  });
+
+  const text = response.content[0].text;
+  const clean = text.replace(/```json\n?|```/g, '').trim();
+
+  try {
+    return JSON.parse(clean);
+  } catch {
+    console.error('Failed to parse briefing:', clean);
+    return {
+      headline: 'Unable to generate briefing — try again.',
+      urgent: [],
+      todaysPlan: [],
+      watchList: [],
+      clear: '',
+    };
+  }
+}
+
+module.exports = { classifyEmail, generateBriefing };
