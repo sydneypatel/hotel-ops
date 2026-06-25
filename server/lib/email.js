@@ -26,7 +26,7 @@ function buildHtml(timeLabel, briefing, stats) {
 <div style="max-width:600px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
 
   <div style="background:#111;padding:20px 24px;">
-    <div style="color:white;font-size:18px;font-weight:700;">Hotel Ops</div>
+    <div style="color:white;font-size:18px;font-weight:700;">Dashboard</div>
     <div style="color:#9ca3af;font-size:13px;margin-top:3px;">${timeLabel} &middot; ${now}</div>
   </div>
 
@@ -74,7 +74,7 @@ function buildHtml(timeLabel, briefing, stats) {
 async function sendReport(recipients, timeLabel, briefing, stats) {
   const { Resend } = require('resend');
   const resend = new Resend(process.env.RESEND_API_KEY);
-  
+
   const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   await resend.emails.send({
