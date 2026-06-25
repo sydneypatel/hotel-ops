@@ -72,6 +72,9 @@ function buildHtml(timeLabel, briefing, stats) {
 }
 
 async function sendReport(recipients, timeLabel, briefing, stats) {
+  const { Resend } = require('resend');
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  
   const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   await resend.emails.send({
