@@ -177,4 +177,29 @@ router.get('/briefing', async (req, res) => {
   }
 });
 
+router.post('/renew-watches', async (req, res) => {
+  try {
+    // Find connections expiring in the next 24 hours
+    const result = await db.query(`
+      SELECT * FROM gmail_connections
+      WHERE watch_expiry < NOW() + INTERVAL '24 hours'
+    `);
+
+    for (const conn of result.rows) {
+      const gmail = await makeGmailClient(conn.access_token, conn.refresh_token);
+      const watch = await registerWatch(gmail);
+      await db.query(
+        'UPDATE gmail_connections SET history_id = $1, watch_expiry = $2 WHERE id = $3',
+        [watch.historyId, new Date(parseInt(watch.expiration)), conn.id]
+      );
+      console.log(`[cron] Renewed watch for ${conn.gmail_email}, expires: ${new Date(parseInt(watch.expiration))}`);
+    }
+
+    res.json({ ok: true, renewed: result.rows.length });
+  } catch (err) {
+    console.error('[cron] Renew error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
