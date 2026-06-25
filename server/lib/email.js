@@ -74,15 +74,21 @@ function buildHtml(timeLabel, briefing, stats) {
 async function sendReport(recipients, timeLabel, briefing, stats) {
   const { Resend } = require('resend');
   const resend = new Resend(process.env.RESEND_API_KEY);
+  const now = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
 
-  const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
-  await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: 'Hotel Ops <onboarding@resend.dev>',
     to: recipients,
     subject: `Hotel Ops — ${timeLabel} | ${now}`,
     html: buildHtml(timeLabel, briefing, stats),
   });
+
+  if (error) {
+    console.error('[resend] Error:', JSON.stringify(error));
+    throw new Error(error.message);
+  }
+  
+  console.log('[resend] Delivered, id:', data?.id);
 }
 
 module.exports = { sendReport };
