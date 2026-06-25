@@ -5,7 +5,7 @@ const session = require('express-session');
 const path = require('path');
 
 const webhookRoutes = require('./routes/webhook');
-const gmailRoutes   = require('./routes/gmail');
+const gmailRoutes   = require('./routes/gmail_routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
