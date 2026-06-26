@@ -1,13 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  ClerkProvider,
+  SignedIn,
+  SignedOut,
+  RedirectToSignIn,
+  UserButton,
+  useAuth,
+} from '@clerk/clerk-react';
 
-const API = 'https://endearing-blessing-production-c742.up.railway.app';
+const API          = 'https://endearing-blessing-production-c742.up.railway.app';
+const PUBLISHABLE_KEY = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
 
 const COLS = [
   { key:'new',         label:'New',        color:'#6b7280' },
   { key:'in_progress', label:'In Progress', color:'#BA7517' },
   { key:'resolved',    label:'Complete',    color:'#1D9E75' },
 ];
-
 const PRI_COLOR = { URGENT:'#E24B4A', HIGH:'#BA7517', MEDIUM:'#378ADD', LOW:'#639922' };
 const PRI_ORDER = { URGENT:0, HIGH:1, MEDIUM:2, LOW:3 };
 const HOTEL_COLORS = ['#7F77DD','#1D9E75','#378ADD','#BA7517','#E24B4A','#D4537E','#639922'];
@@ -17,7 +25,6 @@ function hotelColor(name, hotels) {
   const i = hotels.indexOf(name);
   return i >= 0 ? HOTEL_COLORS[i % HOTEL_COLORS.length] : '#888780';
 }
-
 function timeAgo(dateStr) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -28,14 +35,13 @@ function timeAgo(dateStr) {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
-
 function sortByPriority(arr) {
   return [...arr].sort((a,b) => (PRI_ORDER[a.priority]??4) - (PRI_ORDER[b.priority]??4));
 }
 
 // ─── Briefing Panel ───────────────────────────────────────────────────────────
 
-function BriefingPanel() {
+function BriefingPanel({ authFetch }) {
   const [briefing, setBriefing]       = useState(null);
   const [loading, setLoading]         = useState(false);
   const [generatedAt, setGeneratedAt] = useState(null);
@@ -45,7 +51,7 @@ function BriefingPanel() {
   async function generate() {
     setLoading(true); setError(null); setExpanded(true);
     try {
-      const res = await fetch(`${API}/api/gmail/briefing`, { credentials:'include' });
+      const res  = await authFetch(`${API}/api/gmail/briefing`);
       if (!res.ok) throw new Error('Failed');
       const data = await res.json();
       setBriefing(data.briefing);
@@ -56,7 +62,7 @@ function BriefingPanel() {
 
   return (
     <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, marginBottom:20, overflow:'hidden' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom: expanded && briefing ? '1px solid #f3f4f6' : 'none', cursor: briefing ? 'pointer' : 'default' }}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom: expanded&&briefing ? '1px solid #f3f4f6' : 'none', cursor: briefing ? 'pointer' : 'default' }}
         onClick={() => briefing && setExpanded(e => !e)}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:16 }}>📋</span>
@@ -64,9 +70,7 @@ function BriefingPanel() {
           {generatedAt && <span style={{ fontSize:11, color:'#9ca3af' }}>Generated {generatedAt.toLocaleString('en-US', { weekday:'short', hour:'numeric', minute:'2-digit' })}</span>}
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {briefing && !loading && (
-            <button onClick={e=>{e.stopPropagation();generate();}} style={{ fontSize:11, padding:'3px 10px', borderRadius:6, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer', color:'#6b7280' }}>🔄 Refresh</button>
-          )}
+          {briefing && !loading && <button onClick={e=>{e.stopPropagation();generate();}} style={{ fontSize:11, padding:'3px 10px', borderRadius:6, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer', color:'#6b7280' }}>↺ Refresh</button>}
           <button onClick={e=>{e.stopPropagation(); briefing ? setExpanded(ex=>!ex) : generate();}} disabled={loading}
             style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor: loading?'wait':'pointer', opacity: loading?0.7:1 }}>
             {loading ? 'Thinking...' : briefing ? (expanded ? '▲ Hide' : '▼ Show') : 'Generate briefing ↗'}
@@ -119,7 +123,6 @@ function Card({ em, hotels, isOpen, onToggle, onStatusChange, onDelete, onDragSt
   const nextStatus = em.status==='new'?'in_progress':em.status==='in_progress'?'resolved':null;
   const prevLabel  = em.status==='in_progress'?'← New':em.status==='resolved'?'← In Progress':null;
   const nextLabel  = em.status==='new'?'→ Start':em.status==='in_progress'?'✓ Done':null;
-
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       style={{ border:'1px solid #e5e7eb', borderLeft:`3px solid ${hc}`, borderRadius:8, background:'#fff', padding:'10px 12px', marginBottom:8, cursor:'grab', opacity:isDragging?0.4:1, userSelect:'none' }}>
@@ -152,40 +155,48 @@ function Card({ em, hotels, isOpen, onToggle, onStatusChange, onDelete, onDragSt
   );
 }
 
-// ─── Btn (reusable button with hover) ─────────────────────────────────────────
+// ─── Btn ──────────────────────────────────────────────────────────────────────
 
-function Btn({ onClick, disabled, children, style = {} }) {
+function Btn({ onClick, disabled, children, primary = false }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        fontSize:13, padding:'8px 16px', borderRadius:8,
-        border:'1px solid #e5e7eb',
-        background: hovered ? '#f3f4f6' : '#fff',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        color:'#374151',
-        fontWeight:500,
+    <button onClick={onClick} disabled={disabled}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ fontSize:13, padding:'8px 16px', borderRadius:8, display:'flex', alignItems:'center', gap:6,
+        border: primary ? 'none' : '1px solid #e5e7eb',
+        background: primary ? '#111' : hovered ? '#f3f4f6' : '#fff',
+        color: primary ? '#fff' : '#374151',
+        cursor: disabled ? 'not-allowed' : 'pointer', fontWeight:500,
         transition:'background 0.12s, border-color 0.12s',
-        borderColor: hovered ? '#d1d5db' : '#e5e7eb',
+        borderColor: !primary && hovered ? '#d1d5db' : '#e5e7eb',
         opacity: disabled ? 0.6 : 1,
-        display:'flex', alignItems:'center', gap:6,
-        ...style,
-      }}
-    >
+      }}>
       {children}
     </button>
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ─── Dashboard (inner — has access to useAuth) ─────────────────────────────────
 
-export default function App() {
+function Dashboard() {
+  const { getToken } = useAuth();
+
+  // authFetch: wraps every API call with Clerk JWT automatically
+  const authFetch = useCallback(async (url, options = {}) => {
+    const token = await getToken();
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        'Authorization': `Bearer ${token}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+  }, [getToken]);
+
   const [emails, setEmails]             = useState([]);
   const [hotels, setHotels]             = useState([]);
+  const [gmailConnected, setGmailConnected] = useState(null);
   const [filter, setFilter]             = useState('All');
   const [openId, setOpenId]             = useState(null);
   const [loading, setLoading]           = useState(true);
@@ -199,62 +210,73 @@ export default function App() {
   const [dragOverCol, setDragOverCol]   = useState(null);
   const [sortNew, setSortNew]           = useState(false);
 
+  const checkStatus = useCallback(async () => {
+    const res  = await authFetch(`${API}/api/gmail/status`);
+    const data = await res.json();
+    setGmailConnected(data.connected);
+  }, [authFetch]);
+
   const fetchEmails = useCallback(async () => {
     setSyncing(true);
     try {
-      const res = await fetch(`${API}/api/gmail/emails`, { credentials:'include' });
-      if (res.status === 401) { window.location.href = `${API}/api/gmail/connect`; return; }
+      const res = await authFetch(`${API}/api/gmail/emails`);
       if (!res.ok) return;
       const data = await res.json();
       setEmails(data);
       setLastSync(new Date());
     } catch(e) { console.error(e); }
     finally { setLoading(false); setSyncing(false); }
-  }, []);
+  }, [authFetch]);
 
   const fetchHotels = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/gmail/hotels`, { credentials:'include' });
-      if (!res.ok) return;
-      const { hotels: h } = await res.json();
-      if (h?.length) setHotels(h);
-    } catch(e) {}
-  }, []);
+    const res = await authFetch(`${API}/api/gmail/hotels`);
+    if (!res.ok) return;
+    const { hotels: h } = await res.json();
+    if (h?.length) setHotels(h);
+  }, [authFetch]);
 
   const fetchReportConfig = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/gmail/report-config`, { credentials:'include' });
-      if (!res.ok) return;
-      const data = await res.json();
-      setReportConfig({
-        recipients: (data.recipient_emails || []).join('\n'),
-        morning: data.send_morning ?? true,
-        midday:  data.send_midday  ?? true,
-        evening: data.send_evening ?? true,
-      });
-    } catch(e) {}
-  }, []);
+    const res = await authFetch(`${API}/api/gmail/report-config`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setReportConfig({
+      recipients: (data.recipient_emails||[]).join('\n'),
+      morning: data.send_morning ?? true,
+      midday:  data.send_midday  ?? true,
+      evening: data.send_evening ?? true,
+    });
+  }, [authFetch]);
 
   useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
+
+  useEffect(() => {
+    if (!gmailConnected) return;
     fetchEmails();
     fetchHotels();
     fetchReportConfig();
     const t = setInterval(fetchEmails, 30000);
     return () => clearInterval(t);
-  }, [fetchEmails, fetchHotels, fetchReportConfig]);
+  }, [gmailConnected, fetchEmails, fetchHotels, fetchReportConfig]);
 
   useEffect(() => { setHotelInput(hotels.join('\n')); }, [hotels]);
 
+  async function connectGmail() {
+    const res  = await authFetch(`${API}/api/gmail/auth-url`);
+    const { url } = await res.json();
+    window.location.href = url;
+  }
+
   async function saveHotels(list) {
-    await fetch(`${API}/api/gmail/hotels`, { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ hotels: list }) });
+    await authFetch(`${API}/api/gmail/hotels`, { method:'PUT', body: JSON.stringify({ hotels: list }) });
     setHotels(list);
     setShowSettings(false);
   }
 
   async function saveReportConfig() {
-    await fetch(`${API}/api/gmail/report-config`, {
-      method:'PUT', credentials:'include',
-      headers:{'Content-Type':'application/json'},
+    await authFetch(`${API}/api/gmail/report-config`, {
+      method:'PUT',
       body: JSON.stringify({
         recipient_emails: reportConfig.recipients.split('\n').map(e=>e.trim()).filter(Boolean),
         send_morning: reportConfig.morning,
@@ -266,17 +288,17 @@ export default function App() {
   }
 
   async function updateStatus(id, status) {
-    await fetch(`${API}/api/gmail/emails/${id}/status`, { method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ status }) });
+    await authFetch(`${API}/api/gmail/emails/${id}/status`, { method:'PATCH', body: JSON.stringify({ status }) });
     setEmails(prev => prev.map(e => e.id===id ? {...e,status} : e));
   }
 
   async function deleteEmail(id) {
-    await fetch(`${API}/api/gmail/emails/${id}`, { method:'DELETE', credentials:'include' });
+    await authFetch(`${API}/api/gmail/emails/${id}`, { method:'DELETE' });
     setEmails(prev => prev.filter(e => e.id!==id));
   }
 
   async function clearResolved() {
-    await fetch(`${API}/api/gmail/emails`, { method:'DELETE', credentials:'include' });
+    await authFetch(`${API}/api/gmail/emails`, { method:'DELETE' });
     setEmails(prev => prev.filter(e => e.status!=='resolved'));
   }
 
@@ -296,13 +318,33 @@ export default function App() {
     </button>
   );
 
+  // ─── Gmail not connected yet ───────────────────────────────────────────────
+
+  if (gmailConnected === false) {
+    return (
+      <div style={{ fontFamily:'system-ui, sans-serif', minHeight:'100vh', background:'#f9fafb', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ textAlign:'center', padding:40 }}>
+          <div style={{ fontSize:48, marginBottom:16 }}>📬</div>
+          <h1 style={{ fontSize:24, fontWeight:700, margin:'0 0 8px' }}>Welcome to Dashboard</h1>
+          <p style={{ color:'#6b7280', marginBottom:24, maxWidth:360, lineHeight:1.6 }}>
+            Connect your Gmail to start receiving real-time email triage and AI-powered briefings.
+          </p>
+          <button onClick={connectGmail} style={{ fontSize:14, padding:'12px 24px', borderRadius:10, border:'none', background:'#111', color:'#fff', cursor:'pointer', fontWeight:600 }}>
+            Connect Gmail →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Main dashboard ────────────────────────────────────────────────────────
 
   return (
     <div style={{ fontFamily:'system-ui, sans-serif', background:'#f9fafb', minHeight:'100vh', padding:20, boxSizing:'border-box' }}>
       <style>{`
         @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
         .spin { display:inline-block; animation:spin 0.8s linear infinite; }
-        ::-webkit-scrollbar { width:4px; } 
+        ::-webkit-scrollbar { width:4px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
         select { appearance:none; -webkit-appearance:none; }
@@ -321,9 +363,11 @@ export default function App() {
             ⚙️ Settings
           </Btn>
           <Btn onClick={fetchEmails} disabled={syncing}>
-            <span className={syncing ? 'spin' : ''} style={{ fontSize:14 }}>↺</span>
+            <span className={syncing ? 'spin' : ''} style={{ fontSize:16 }}>🔄</span>
             {syncing ? 'Syncing' : 'Refresh'}
           </Btn>
+          {/* Clerk user button — avatar + sign out */}
+          <UserButton afterSignOutUrl="/" />
         </div>
       </div>
 
@@ -342,36 +386,20 @@ export default function App() {
         ))}
       </div>
 
-      <BriefingPanel />
+      <BriefingPanel authFetch={authFetch} />
 
       {/* Hotel filter — dropdown */}
       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
         <label style={{ fontSize:12, color:'#6b7280', fontWeight:500, flexShrink:0 }}>Filter by property:</label>
         <div style={{ position:'relative' }}>
-          <select
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-            style={{
-              fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8,
-              border:'1px solid #e5e7eb', background:'#fff', color:'#374151',
-              cursor:'pointer', outline:'none', fontFamily:'system-ui',
-              minWidth:220,
-            }}
-          >
-            <option value="All">All Emails ({emails.length})</option>
-            {allHotels.map(h => (
-              <option key={h} value={h}>
-                {h} ({emails.filter(e=>e.hotel===h).length})
-              </option>
-            ))}
+          <select value={filter} onChange={e => setFilter(e.target.value)}
+            style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:220 }}>
+            <option value="All">All ({emails.length})</option>
+            {allHotels.map(h => <option key={h} value={h}>{h} ({emails.filter(e=>e.hotel===h).length})</option>)}
           </select>
           <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
         </div>
-        {filter !== 'All' && (
-          <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>
-            × Clear
-          </button>
-        )}
+        {filter !== 'All' && <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
       </div>
 
       {/* Kanban */}
@@ -389,8 +417,7 @@ export default function App() {
                 onDragLeave={()=>setDragOverCol(null)}
                 onDrop={()=>handleDrop(col.key)}
                 style={{ background:isOver?col.color+'08':'transparent', borderRadius:10, border:isOver?`2px dashed ${col.color}`:'2px solid transparent', padding:isOver?6:0, transition:'all 0.15s' }}>
-                {/* Column header */}
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:10, borderBottom:`2px solid ${col.color}`, marginBottom:12, position:'sticky', top:0, background:'#f9fafb', zIndex:1, paddingTop:2 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:10, borderBottom:`2px solid ${col.color}`, marginBottom:12, paddingTop:2 }}>
                   <span style={{ fontSize:13, fontWeight:600, color:col.color }}>{col.label}</span>
                   <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                     <span style={{ fontSize:11, padding:'1px 8px', borderRadius:999, background:col.color+'22', color:col.color, fontWeight:600 }}>{cards.length}</span>
@@ -404,7 +431,6 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                {/* Scrollable card list */}
                 <div style={{ maxHeight:'calc(100vh - 420px)', overflowY:'auto', paddingRight:2 }}>
                   {cards.length===0
                     ? <div style={{ fontSize:12, color:'#d1d5db', textAlign:'center', padding:'30px 0' }}>—</div>
@@ -435,7 +461,6 @@ export default function App() {
               {tabBtn('hotels','🏨 Hotels')}
               {tabBtn('reports','📧 Reports')}
             </div>
-
             {settingsTab==='hotels' && (
               <>
                 <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>One hotel name per line. Claude uses these to classify which property each email belongs to.</p>
@@ -449,20 +474,15 @@ export default function App() {
                 </div>
               </>
             )}
-
             {settingsTab==='reports' && (
               <>
-                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Recipient email addresses (one per line). These people will receive scheduled briefing emails.</p>
+                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Recipient emails (one per line). These people will receive scheduled briefings.</p>
                 <textarea rows={4} value={reportConfig.recipients} onChange={e=>setReportConfig(c=>({...c,recipients:e.target.value}))}
                   placeholder={'boss@company.com\nmanager@company.com'}
                   style={{ width:'100%', fontSize:13, padding:10, borderRadius:8, border:'1px solid #e5e7eb', resize:'vertical', boxSizing:'border-box', fontFamily:'system-ui', marginBottom:14 }}
                 />
                 <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:10 }}>Send reports at:</div>
-                {[
-                  { key:'morning', label:'🌅 Morning (7am)' },
-                  { key:'midday',  label:'☀️ Midday (12pm)' },
-                  { key:'evening', label:'🌆 Evening (6pm)' },
-                ].map(({ key, label }) => (
+                {[{key:'morning',label:'🌅 Morning (7am)'},{key:'midday',label:'☀️ Midday (12pm)'},{key:'evening',label:'🌆 Evening (6pm)'}].map(({ key, label }) => (
                   <label key={key} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, cursor:'pointer' }}>
                     <input type="checkbox" checked={reportConfig[key]} onChange={e=>setReportConfig(c=>({...c,[key]:e.target.checked}))} style={{ width:16, height:16, cursor:'pointer' }} />
                     <span style={{ fontSize:13, color:'#374151' }}>{label}</span>
@@ -478,5 +498,20 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── App — Clerk wrapper ───────────────────────────────────────────────────────
+
+export default function App() {
+  return (
+    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+      <SignedIn>
+        <Dashboard />
+      </SignedIn>
+      <SignedOut>
+        <RedirectToSignIn />
+      </SignedOut>
+    </ClerkProvider>
   );
 }

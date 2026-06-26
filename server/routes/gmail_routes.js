@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('@clerk/express');
 const {
   getAuthUrl, exchangeCode, makeGmailClient,
   getUserEmail, registerWatch,
@@ -8,22 +9,49 @@ const { classifyEmail, generateBriefing } = require('../lib/claude');
 const { sendReport } = require('../lib/email');
 const { db } = require('../lib/db');
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+// ─── Helper: look up our DB user by Clerk user ID ─────────────────────────────
 
-router.get('/connect', (req, res) => res.redirect(getAuthUrl()));
+async function getUserByClerk(clerkUserId) {
+  const result = await db.query('SELECT * FROM users WHERE clerk_id = $1', [clerkUserId]);
+  return result.rows[0] || null;
+}
+
+// ─── Auth URL — frontend calls this, then redirects user to the returned URL ──
+
+router.get('/auth-url', requireAuth(), (req, res) => {
+  const clerkUserId = req.auth.userId;
+  const url = getAuthUrl(clerkUserId); // Clerk ID travels through OAuth as state param
+  res.json({ url });
+});
+
+// ─── OAuth Callback — redirect from Google, no auth header (redirect flow) ────
 
 router.get('/callback', async (req, res) => {
-  const { code, error } = req.query;
-  if (error) return res.redirect(`${process.env.CLIENT_URL}?error=oauth_denied`);
-  try {
-    const tokens   = await exchangeCode(code);
-    const gmail    = await makeGmailClient(tokens.access_token, tokens.refresh_token);
-    const email    = await getUserEmail(tokens.access_token, tokens.refresh_token);
-    const watch    = await registerWatch(gmail);
-    console.log(`[gmail] Watch registered for ${email}, expires: ${new Date(parseInt(watch.expiration))}`);
+  const { code, state: clerkUserId, error } = req.query;
+  if (error || !clerkUserId) return res.redirect(`${process.env.CLIENT_URL}?error=oauth_denied`);
 
-    let user = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (!user.rows.length) user = await db.query('INSERT INTO users (email) VALUES ($1) RETURNING id', [email]);
+  try {
+    const tokens    = await exchangeCode(code);
+    const gmail     = await makeGmailClient(tokens.access_token, tokens.refresh_token);
+    const gmailEmail = await getUserEmail(tokens.access_token, tokens.refresh_token);
+    const watch     = await registerWatch(gmail);
+    console.log(`[gmail] Watch registered for ${gmailEmail}`);
+
+    // Create or update user — keyed by clerk_id
+    let user = await db.query('SELECT id FROM users WHERE clerk_id = $1', [clerkUserId]);
+    if (!user.rows.length) {
+      // Check if email already exists (legacy user without clerk_id)
+      const legacy = await db.query('SELECT id FROM users WHERE email = $1', [gmailEmail]);
+      if (legacy.rows.length) {
+        await db.query('UPDATE users SET clerk_id = $1 WHERE id = $2', [clerkUserId, legacy.rows[0].id]);
+        user = legacy;
+      } else {
+        user = await db.query(
+          'INSERT INTO users (email, clerk_id) VALUES ($1, $2) RETURNING id',
+          [gmailEmail, clerkUserId]
+        );
+      }
+    }
     const userId = user.rows[0].id;
 
     await db.query(`
@@ -32,14 +60,12 @@ router.get('/callback', async (req, res) => {
       ON CONFLICT (gmail_email) DO UPDATE SET
         access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token,
         history_id=EXCLUDED.history_id, watch_expiry=EXCLUDED.watch_expiry
-    `, [userId, email, tokens.access_token, tokens.refresh_token, watch.historyId, new Date(parseInt(watch.expiration))]);
+    `, [userId, gmailEmail, tokens.access_token, tokens.refresh_token, watch.historyId, new Date(parseInt(watch.expiration))]);
 
     await db.query(`INSERT INTO hotel_configs (user_id, hotel_names) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING`, [userId, []]);
     await db.query(`INSERT INTO report_configs (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`, [userId]);
 
-    req.session.userId    = userId;
-    req.session.gmailEmail = email;
-    console.log(`[gmail] Setup complete for ${email}`);
+    console.log(`[gmail] Setup complete for ${gmailEmail} (clerk: ${clerkUserId})`);
     res.redirect(`${process.env.CLIENT_URL}`);
   } catch (err) {
     console.error('[gmail] Callback error:', err);
@@ -47,25 +73,28 @@ router.get('/callback', async (req, res) => {
   }
 });
 
-router.get('/status', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.json({ connected: false });
-  const r = await db.query('SELECT gmail_email, watch_expiry FROM gmail_connections WHERE user_id = $1', [userId]);
+// ─── Status ───────────────────────────────────────────────────────────────────
+
+router.get('/status', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.json({ connected: false });
+  const r = await db.query('SELECT gmail_email, watch_expiry FROM gmail_connections WHERE user_id = $1', [user.id]);
   if (!r.rows.length) return res.json({ connected: false });
   res.json({ connected: true, gmailEmail: r.rows[0].gmail_email, watchExpiry: r.rows[0].watch_expiry });
 });
 
 // ─── Emails ───────────────────────────────────────────────────────────────────
 
-router.get('/emails', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+router.get('/emails', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Connect Gmail first' });
+
   const { hotel, priority, status, limit = 100 } = req.query;
-  const params = [userId];
+  const params = [user.id];
   const conditions = ['user_id = $1'];
-  if (hotel && hotel !== 'all')    { params.push(hotel);           conditions.push(`hotel = $${params.length}`); }
-  if (priority && priority !== 'all') { params.push(priority);    conditions.push(`priority = $${params.length}`); }
-  if (status && status !== 'all')  { params.push(status);          conditions.push(`status = $${params.length}`); }
+  if (hotel && hotel !== 'all')    { params.push(hotel);    conditions.push(`hotel = $${params.length}`); }
+  if (priority && priority !== 'all') { params.push(priority); conditions.push(`priority = $${params.length}`); }
+  if (status && status !== 'all')  { params.push(status);   conditions.push(`status = $${params.length}`); }
   params.push(parseInt(limit));
   const result = await db.query(`
     SELECT * FROM emails WHERE ${conditions.join(' AND ')}
@@ -75,62 +104,61 @@ router.get('/emails', async (req, res) => {
   res.json(result.rows);
 });
 
-
-router.patch('/emails/:id/status', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+router.patch('/emails/:id/status', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
   const { status } = req.body;
   if (!['new','in_progress','resolved'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  await db.query('UPDATE emails SET status = $1 WHERE id = $2 AND user_id = $3', [status, req.params.id, userId]);
+  await db.query('UPDATE emails SET status = $1 WHERE id = $2 AND user_id = $3', [status, req.params.id, user.id]);
   res.json({ ok: true });
 });
 
-router.delete('/emails/:id', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  await db.query('DELETE FROM emails WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
+router.delete('/emails/:id', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  await db.query('DELETE FROM emails WHERE id = $1 AND user_id = $2', [req.params.id, user.id]);
   res.json({ ok: true });
 });
 
-router.delete('/emails', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  await db.query("DELETE FROM emails WHERE user_id = $1 AND status = 'resolved'", [userId]);
+router.delete('/emails', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  await db.query("DELETE FROM emails WHERE user_id = $1 AND status = 'resolved'", [user.id]);
   res.json({ ok: true });
 });
 
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
-router.get('/hotels', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  const r = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [userId]);
+router.get('/hotels', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.json({ hotels: [] });
+  const r = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [user.id]);
   res.json({ hotels: r.rows[0]?.hotel_names || [] });
 });
 
-router.put('/hotels', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+router.put('/hotels', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
   await db.query(`
     INSERT INTO hotel_configs (user_id, hotel_names) VALUES ($1, $2)
     ON CONFLICT (user_id) DO UPDATE SET hotel_names = EXCLUDED.hotel_names
-  `, [userId, req.body.hotels]);
+  `, [user.id, req.body.hotels]);
   res.json({ ok: true });
 });
 
 // ─── Briefing ─────────────────────────────────────────────────────────────────
 
-router.get('/briefing', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+router.get('/briefing', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
   try {
     const emailsResult = await db.query(`
       SELECT subject, sender, hotel, category, priority, summary, action_items, requires_response, status, received_at
       FROM emails WHERE user_id = $1 AND status != 'resolved'
       ORDER BY CASE priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END, received_at DESC
       LIMIT 50
-    `, [userId]);
-    const hotelResult = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [userId]);
+    `, [user.id]);
+    const hotelResult = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [user.id]);
     const emails     = emailsResult.rows;
     const hotelNames = hotelResult.rows[0]?.hotel_names || [];
     if (!emails.length) return res.json({ briefing: { headline:'Inbox is clear.', urgent:[], todaysPlan:[], watchList:[], clear:'Nothing outstanding.' }, generatedAt: new Date() });
@@ -144,16 +172,16 @@ router.get('/briefing', async (req, res) => {
 
 // ─── Report Config ────────────────────────────────────────────────────────────
 
-router.get('/report-config', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  const r = await db.query('SELECT * FROM report_configs WHERE user_id = $1', [userId]);
+router.get('/report-config', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.json({ recipient_emails: [], send_morning: true, send_midday: true, send_evening: true });
+  const r = await db.query('SELECT * FROM report_configs WHERE user_id = $1', [user.id]);
   res.json(r.rows[0] || { recipient_emails: [], send_morning: true, send_midday: true, send_evening: true });
 });
 
-router.put('/report-config', async (req, res) => {
-  const userId = req.session?.userId;
-  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+router.put('/report-config', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req.auth.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
   const { recipient_emails, send_morning, send_midday, send_evening } = req.body;
   await db.query(`
     INSERT INTO report_configs (user_id, recipient_emails, send_morning, send_midday, send_evening)
@@ -163,21 +191,19 @@ router.put('/report-config', async (req, res) => {
       send_morning=EXCLUDED.send_morning,
       send_midday=EXCLUDED.send_midday,
       send_evening=EXCLUDED.send_evening
-  `, [userId, recipient_emails, send_morning, send_midday, send_evening]);
+  `, [user.id, recipient_emails, send_morning, send_midday, send_evening]);
   res.json({ ok: true });
 });
 
-// ─── Scheduled Report Send (called by cron) ───────────────────────────────────
+// ─── Scheduled Report Send ────────────────────────────────────────────────────
 
 router.post('/report-send', async (req, res) => {
-  // Simple secret check so random people can't spam your reports
   if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const { time = 'morning' } = req.query; // morning | midday | evening
-  const timeLabels = { morning: 'Morning Briefing', midday: 'Midday Update', evening: 'Evening Wrap-up' };
-  const timeLabel = timeLabels[time] || 'Briefing';
+  const { time = 'morning' } = req.query;
+  const timeLabels = { morning:'Morning Briefing', midday:'Midday Update', evening:'Evening Wrap-up' };
+  const timeLabel  = timeLabels[time] || 'Briefing';
 
   try {
     const configs = await db.query(`
@@ -185,34 +211,24 @@ router.post('/report-send', async (req, res) => {
       JOIN users u ON rc.user_id = u.id
       WHERE array_length(rc.recipient_emails, 1) > 0
     `);
-
     for (const config of configs.rows) {
       if (time === 'morning' && !config.send_morning) continue;
       if (time === 'midday'  && !config.send_midday)  continue;
       if (time === 'evening' && !config.send_evening) continue;
-
       const emailsResult = await db.query(`
         SELECT subject, sender, hotel, category, priority, summary, action_items, requires_response, status
         FROM emails WHERE user_id = $1 AND status != 'resolved'
         ORDER BY CASE priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END
         LIMIT 50
       `, [config.user_id]);
-
       const hotelResult = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [config.user_id]);
       const emails     = emailsResult.rows;
       const hotelNames = hotelResult.rows[0]?.hotel_names || [];
-
-      const briefing = await generateBriefing(emails, hotelNames);
-      const stats = {
-        total:   emails.length,
-        urgent:  emails.filter(e => e.priority === 'URGENT').length,
-        replies: emails.filter(e => e.requires_response).length,
-      };
-
+      const briefing   = await generateBriefing(emails, hotelNames);
+      const stats      = { total: emails.length, urgent: emails.filter(e=>e.priority==='URGENT').length, replies: emails.filter(e=>e.requires_response).length };
       await sendReport(config.recipient_emails, timeLabel, briefing, stats);
       console.log(`[report] Sent ${timeLabel} to ${config.recipient_emails.join(', ')}`);
     }
-
     res.json({ ok: true, sent: configs.rows.length });
   } catch (err) {
     console.error('[report] Error:', err);
@@ -224,16 +240,12 @@ router.post('/report-send', async (req, res) => {
 
 router.post('/renew-watches', async (req, res) => {
   try {
-    const result = await db.query(`
-      SELECT * FROM gmail_connections WHERE watch_expiry < NOW() + INTERVAL '24 hours'
-    `);
+    const result = await db.query(`SELECT * FROM gmail_connections WHERE watch_expiry < NOW() + INTERVAL '24 hours'`);
     for (const conn of result.rows) {
       const gmail = await makeGmailClient(conn.access_token, conn.refresh_token);
       const watch = await registerWatch(gmail);
-      await db.query(
-        'UPDATE gmail_connections SET history_id = $1, watch_expiry = $2 WHERE id = $3',
-        [watch.historyId, new Date(parseInt(watch.expiration)), conn.id]
-      );
+      await db.query('UPDATE gmail_connections SET history_id=$1, watch_expiry=$2 WHERE id=$3',
+        [watch.historyId, new Date(parseInt(watch.expiration)), conn.id]);
       console.log(`[cron] Renewed watch for ${conn.gmail_email}`);
     }
     res.json({ ok: true, renewed: result.rows.length });

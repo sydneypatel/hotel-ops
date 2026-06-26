@@ -8,34 +8,29 @@ function makeOAuth2Client() {
   );
 }
 
-function getAuthUrl() {
+// state = Clerk user ID, passed through OAuth so we know who's connecting
+function getAuthUrl(state = '') {
   const client = makeOAuth2Client();
   return client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent', // forces refresh_token every time
+    prompt: 'consent',
     scope: [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
+    state,
   });
 }
 
 async function exchangeCode(code) {
   const client = makeOAuth2Client();
   const { tokens } = await client.getToken(code);
-  return tokens; // { access_token, refresh_token, expiry_date }
+  return tokens;
 }
 
 async function makeGmailClient(accessToken, refreshToken) {
   const auth = makeOAuth2Client();
   auth.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
-  // Auto-refresh access token when expired
-  auth.on('tokens', (tokens) => {
-    if (tokens.refresh_token) {
-      // TODO: persist updated tokens to DB
-      console.log('Tokens refreshed for:', accessToken.slice(0, 10));
-    }
-  });
   return google.gmail({ version: 'v1', auth });
 }
 
@@ -47,7 +42,6 @@ async function getUserEmail(accessToken, refreshToken) {
   return data.email;
 }
 
-// Register Gmail Push — expires in 7 days, renew via cron
 async function registerWatch(gmail) {
   const { data } = await gmail.users.watch({
     userId: 'me',
@@ -56,14 +50,13 @@ async function registerWatch(gmail) {
       labelIds: ['INBOX'],
     },
   });
-  return data; // { historyId, expiration }
+  return data;
 }
 
 async function stopWatch(gmail) {
   await gmail.users.stop({ userId: 'me' }).catch(() => {});
 }
 
-// Given a historyId, return all new INBOX message IDs added since then
 async function getNewMessageIds(gmail, startHistoryId) {
   const { data } = await gmail.users.history.list({
     userId: 'me',
@@ -71,9 +64,7 @@ async function getNewMessageIds(gmail, startHistoryId) {
     historyTypes: ['messageAdded'],
     labelId: 'INBOX',
   });
-
   if (!data.history) return [];
-
   const ids = new Set();
   for (const record of data.history) {
     for (const { message } of (record.messagesAdded || [])) {
@@ -83,18 +74,14 @@ async function getNewMessageIds(gmail, startHistoryId) {
   return [...ids];
 }
 
-// Fetch and parse a single message
 async function getEmailDetails(gmail, messageId) {
   const { data: msg } = await gmail.users.messages.get({
     userId: 'me',
     id: messageId,
     format: 'full',
   });
-
   const headers = msg.payload.headers || [];
   const h = (name) => headers.find(h => h.name.toLowerCase() === name)?.value || '';
-
-  // Extract plaintext body (recursively search MIME parts)
   let body = '';
   function walk(part) {
     if (!part) return;
@@ -105,14 +92,13 @@ async function getEmailDetails(gmail, messageId) {
     }
   }
   walk(msg.payload);
-
   return {
     id: messageId,
     subject: h('subject') || '(No subject)',
     from: h('from'),
     date: h('date'),
     snippet: msg.snippet || '',
-    body: body.slice(0, 600), // first 600 chars for classification
+    body: body.slice(0, 600),
   };
 }
 
