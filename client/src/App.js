@@ -263,9 +263,24 @@ function Dashboard() {
   useEffect(() => { setHotelInput(hotels.join('\n')); }, [hotels]);
 
   async function connectGmail() {
-    const res  = await authFetch(`${API}/api/gmail/auth-url`);
-    const { url } = await res.json();
-    window.location.href = url;
+    try {
+      const token = await getToken();
+      console.log('[connect] token:', token ? 'GOT TOKEN' : 'NO TOKEN');
+      const res = await fetch(`${API}/api/gmail/auth-url`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      console.log('[connect] status:', res.status);
+      const data = await res.json();
+      console.log('[connect] data:', JSON.stringify(data));
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert('No URL returned: ' + JSON.stringify(data));
+      }
+    } catch (e) {
+      console.error('[connect] Error:', e);
+      alert('Error: ' + e.message);
+    }
   }
 
   async function saveHotels(list) {
