@@ -19,8 +19,10 @@ async function getUserByClerk(clerkUserId) {
 // ─── Auth URL — frontend calls this, then redirects user to the returned URL ──
 
 router.get('/auth-url', requireAuth(), (req, res) => {
-  const clerkUserId = req.auth.userId;
-  const url = getAuthUrl(clerkUserId); // Clerk ID travels through OAuth as state param
+  console.log('[auth-url] req.auth:', JSON.stringify(req.auth));
+  const clerkUserId = req.auth?.userId;
+  if (!clerkUserId) return res.status(401).json({ error: 'No userId' });
+  const url = getAuthUrl(clerkUserId);
   res.json({ url });
 });
 
@@ -28,8 +30,7 @@ router.get('/auth-url', requireAuth(), (req, res) => {
 
 router.get('/callback', async (req, res) => {
   const { code, state: clerkUserId, error } = req.query;
-  if (error || !clerkUserId) return res.redirect(`${process.env.CLIENT_URL}?error=oauth_denied`);
-
+  if (error) return res.redirect(`${process.env.CLIENT_URL}?error=oauth_denied`);
   try {
     const tokens    = await exchangeCode(code);
     const gmail     = await makeGmailClient(tokens.access_token, tokens.refresh_token);
@@ -38,18 +39,23 @@ router.get('/callback', async (req, res) => {
     console.log(`[gmail] Watch registered for ${gmailEmail}`);
 
     // Create or update user — keyed by clerk_id
-    let user = await db.query('SELECT id FROM users WHERE clerk_id = $1', [clerkUserId]);
-    if (!user.rows.length) {
-      // Check if email already exists (legacy user without clerk_id)
-      const legacy = await db.query('SELECT id FROM users WHERE email = $1', [gmailEmail]);
-      if (legacy.rows.length) {
-        await db.query('UPDATE users SET clerk_id = $1 WHERE id = $2', [clerkUserId, legacy.rows[0].id]);
-        user = legacy;
-      } else {
-        user = await db.query(
-          'INSERT INTO users (email, clerk_id) VALUES ($1, $2) RETURNING id',
-          [gmailEmail, clerkUserId]
-        );
+    let user;
+    if (clerkUserId) {
+      user = await db.query('SELECT id FROM users WHERE clerk_id = $1', [clerkUserId]);
+      if (!user.rows.length) {
+        const legacy = await db.query('SELECT id FROM users WHERE email = $1', [gmailEmail]);
+        if (legacy.rows.length) {
+          await db.query('UPDATE users SET clerk_id = $1 WHERE id = $2', [clerkUserId, legacy.rows[0].id]);
+          user = legacy;
+        } else {
+          user = await db.query('INSERT INTO users (email, clerk_id) VALUES ($1, $2) RETURNING id', [gmailEmail, clerkUserId]);
+        }
+      }
+    } else {
+      // Fallback — no clerk ID, use email
+      user = await db.query('SELECT id FROM users WHERE email = $1', [gmailEmail]);
+      if (!user.rows.length) {
+        user = await db.query('INSERT INTO users (email) VALUES ($1) RETURNING id', [gmailEmail]);
       }
     }
     const userId = user.rows[0].id;
