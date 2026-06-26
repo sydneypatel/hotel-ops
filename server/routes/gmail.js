@@ -97,7 +97,7 @@ router.get('/emails', requireAuth(), async (req, res) => {
   const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Connect Gmail first' });
 
-  const { hotel, priority, status, limit = 100 } = req.query;
+  const { hotel, priority, status, limit = 500 } = req.query;
   const params = [user.id];
   const conditions = ['user_id = $1'];
   if (hotel && hotel !== 'all')    { params.push(hotel);    conditions.push(`hotel = $${params.length}`); }

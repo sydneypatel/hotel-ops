@@ -207,10 +207,11 @@ function Dashboard() {
   const [backfillResult, setBackfillResult]     = useState(null);
   const [draggingId, setDraggingId]             = useState(null);
   const [dragOverCol, setDragOverCol]           = useState(null);
-  const [sortNew, setSortNew]                   = useState(false);
+  const [sortNew, setSortNew] = useState(false);
+  const [emailLimit, setEmailLimit] = useState(100);
 
   const checkStatus = useCallback(async () => {
-    const res  = await authFetch(`${API}/api/gmail/status`);
+    const res = await authFetch(`${API}/api/gmail/emails?limit=${emailLimit}`);
     const data = await res.json();
     setGmailConnected(data.connected);
   }, [authFetch]);
@@ -442,8 +443,20 @@ function Dashboard() {
             {allCats.map(c => <option key={c} value={c}>{c} ({emails.filter(e=>e.category===c).length})</option>)}
           </select>
           <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
+          </div>
+          {categoryFilter !== 'All' && <button onClick={() => setCategoryFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
         </div>
-        {categoryFilter !== 'All' && <button onClick={() => setCategoryFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
+
+      <div style={{ marginLeft:'auto', position:'relative' }}>
+        <select value={emailLimit} onChange={e => { setEmailLimit(Number(e.target.value)); fetchEmails(); }}
+          style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui' }}>
+          <option value={50}>Show 50</option>
+          <option value={100}>Show 100</option>
+          <option value={200}>Show 200</option>
+          <option value={500}>Show 500</option>
+          <option value={9999}>Show all</option>
+        </select>
+        <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
       </div>
 
       {/* Kanban */}
