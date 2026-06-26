@@ -65,7 +65,7 @@ function BriefingPanel() {
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           {briefing && !loading && (
-            <button onClick={e=>{e.stopPropagation();generate();}} style={{ fontSize:11, padding:'3px 10px', borderRadius:6, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer', color:'#6b7280' }}>↺ Refresh</button>
+            <button onClick={e=>{e.stopPropagation();generate();}} style={{ fontSize:11, padding:'3px 10px', borderRadius:6, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer', color:'#6b7280' }}>🔄 Refresh</button>
           )}
           <button onClick={e=>{e.stopPropagation(); briefing ? setExpanded(ex=>!ex) : generate();}} disabled={loading}
             style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor: loading?'wait':'pointer', opacity: loading?0.7:1 }}>
@@ -296,7 +296,7 @@ export default function App() {
     </button>
   );
 
-  
+
   return (
     <div style={{ fontFamily:'system-ui, sans-serif', background:'#f9fafb', minHeight:'100vh', padding:20, boxSizing:'border-box' }}>
       <style>{`
@@ -318,7 +318,7 @@ export default function App() {
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <Btn onClick={() => { setShowSettings(true); setSettingsTab('hotels'); }}>
-            ⚙ Settings
+            ⚙️ Settings
           </Btn>
           <Btn onClick={fetchEmails} disabled={syncing}>
             <span className={syncing ? 'spin' : ''} style={{ fontSize:14 }}>↺</span>
@@ -358,14 +358,14 @@ export default function App() {
               minWidth:220,
             }}
           >
-            <option value="All">All properties ({emails.length})</option>
+            <option value="All">All ({emails.length})</option>
             {allHotels.map(h => (
               <option key={h} value={h}>
                 {h} ({emails.filter(e=>e.hotel===h).length})
               </option>
             ))}
           </select>
-          <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:11 }}>▾</span>
+          <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
         </div>
         {filter !== 'All' && (
           <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>
