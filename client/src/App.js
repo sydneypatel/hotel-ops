@@ -211,7 +211,7 @@ function Dashboard() {
   const [emailLimit, setEmailLimit] = useState(100);
 
   const checkStatus = useCallback(async () => {
-    const res = await authFetch(`${API}/api/gmail/emails?limit=${emailLimit}`);
+    const res = await authFetch(`${API}/api/gmail/status`);
     const data = await res.json();
     setGmailConnected(data.connected);
   }, [authFetch]);
@@ -219,7 +219,7 @@ function Dashboard() {
   const fetchEmails = useCallback(async () => {
     setSyncing(true);
     try {
-      const res = await authFetch(`${API}/api/gmail/emails`);
+      const res = await authFetch(`${API}/api/gmail/emails?limit=${emailLimit}`);
       if (!res.ok) return;
       setEmails(await res.json());
       setLastSync(new Date());
