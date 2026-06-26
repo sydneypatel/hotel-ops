@@ -26,7 +26,10 @@ app.use('/webhook', webhookRoutes);
 app.use(express.json());
 
 // Clerk middleware — reads JWT from Authorization header, populates req.auth
-app.use(clerkMiddleware());
+app.use(clerkMiddleware({
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+  secretKey: process.env.CLERK_SECRET_KEY,
+}));
 
 // Routes
 app.use('/api/gmail', gmailRoutes);
