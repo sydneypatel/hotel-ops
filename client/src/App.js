@@ -191,6 +191,7 @@ function Dashboard() {
   const [hotels, setHotels]                   = useState([]);
   const [gmailConnected, setGmailConnected]   = useState(null);
   const [filter, setFilter]                   = useState('All');
+  const [categoryFilter, setCategoryFilter]   = useState('All');
   const [openId, setOpenId]                   = useState(null);
   const [loading, setLoading]                 = useState(true);
   const [syncing, setSyncing]                 = useState(false);
@@ -334,7 +335,9 @@ function Dashboard() {
     setDraggingId(null); setDragOverCol(null);
   }
 
-  const shown     = filter==='All' ? emails : emails.filter(e => e.hotel===filter);
+  const shown = emails
+  .filter(e => filter === 'All' || e.hotel === filter)
+  .filter(e => categoryFilter === 'All' || e.category === categoryFilter);
   const urgentN   = emails.filter(e => e.priority==='URGENT').length;
   const replyN    = emails.filter(e => e.requires_response && e.status!=='resolved').length;
   const allHotels = [...new Set([...hotels, ...emails.map(e=>e.hotel).filter(h=>h&&h!=='Unknown')])];
@@ -427,7 +430,21 @@ function Dashboard() {
           </select>
           <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
         </div>
-        {filter !== 'All' && <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
+        {filter !== 'All' && <button onClick={() => setFilter('All')} style={{ fontSize: 12, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>× Clear</button>}
+        
+        <div style={{ position:'relative' }}>
+          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+            style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:160 }}>
+            <option value="All">All categories</option>
+            {[...new Set(emails.map(e => e.category).filter(Boolean))].sort().map(c => (
+              <option key={c} value={c}>{c} ({emails.filter(e=>e.category===c).length})</option>
+            ))}
+          </select>
+          <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
+        </div>
+        {categoryFilter !== 'All' && (
+          <button onClick={() => setCategoryFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>
+        )}
       </div>
 
       {/* Kanban */}
