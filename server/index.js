@@ -31,6 +31,13 @@ app.use(clerkMiddleware({
   secretKey: process.env.CLERK_SECRET_KEY,
 }));
 
+// Temp debug route
+app.get('/debug-auth', (req, res) => {
+  console.log('[debug] Authorization header:', req.headers.authorization?.slice(0, 50));
+  console.log('[debug] req.auth:', JSON.stringify(req.auth));
+  res.json({ auth: req.auth, hasHeader: !!req.headers.authorization });
+});
+
 // Routes
 app.use('/api/gmail', gmailRoutes);
 
