@@ -3,7 +3,7 @@ const router = express.Router();
 const { requireAuth, getAuth } = require('@clerk/express');
 const {
   getAuthUrl, exchangeCode, makeGmailClient,
-  getUserEmail, registerWatch, listMessages,
+  getUserEmail, registerWatch, listMessages, getEmailDetails,
 } = require('../lib/gmail');
 const { classifyEmail, generateBriefing } = require('../lib/claude');
 const { sendReport } = require('../lib/email');
