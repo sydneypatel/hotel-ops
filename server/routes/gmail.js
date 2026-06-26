@@ -3,12 +3,11 @@ const router = express.Router();
 const { requireAuth, getAuth } = require('@clerk/express');
 const {
   getAuthUrl, exchangeCode, makeGmailClient,
-  getUserEmail, registerWatch,
+  getUserEmail, registerWatch, listMessages,
 } = require('../lib/gmail');
 const { classifyEmail, generateBriefing } = require('../lib/claude');
 const { sendReport } = require('../lib/email');
 const { db } = require('../lib/db');
-const { getAuthUrl, exchangeCode, makeGmailClient, getUserEmail, registerWatch, listMessages } = require('../lib/gmail');
 
 // ─── Helper: look up our DB user by Clerk user ID ─────────────────────────────
 
