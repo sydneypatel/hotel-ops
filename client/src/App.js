@@ -424,8 +424,7 @@ function Dashboard() {
       <BriefingPanel authFetch={authFetch} />
 
       {/* Filters row */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20, flexWrap:'wrap' }}>
-        <label style={{ fontSize:12, color:'#6b7280', fontWeight:500, flexShrink:0 }}>Filter by property:</label>
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20, flexWrap:'wrap', width:'100%' }}>        <label style={{ fontSize:12, color:'#6b7280', fontWeight:500, flexShrink:0 }}>Filter by property:</label>
         <div style={{ position:'relative' }}>
           <select value={filter} onChange={e => setFilter(e.target.value)}
             style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:200 }}>
