@@ -262,11 +262,27 @@ function Dashboard() {
 
   useEffect(() => { setHotelInput(hotels.join('\n')); }, [hotels]);
 
-  async function connectGmail() {
-    const res  = await authFetch(`${API}/api/gmail/auth-url`);
-    const { url } = await res.json();
-    window.location.href = url;
+async function connectGmail() {
+  try {
+    const token = await getToken();
+    console.log('[connect] token:', token ? 'got token' : 'NO TOKEN');
+    
+    const res = await fetch(`${API}/api/gmail/auth-url`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    console.log('[connect] status:', res.status);
+    const data = await res.json();
+    console.log('[connect] data:', data);
+    
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      console.error('[connect] No URL — response was:', data);
+    }
+  } catch (e) {
+    console.error('[connect] Error:', e);
   }
+}
 
   async function saveHotels(list) {
     await authFetch(`${API}/api/gmail/hotels`, { method:'PUT', body: JSON.stringify({ hotels: list }) });
