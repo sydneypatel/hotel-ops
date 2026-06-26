@@ -69,7 +69,7 @@ router.get('/emails', async (req, res) => {
   params.push(parseInt(limit));
   const result = await db.query(`
     SELECT * FROM emails WHERE ${conditions.join(' AND ')}
-    ORDER BY CASE priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END, received_at DESC
+    ORDER BY received_at DESC
     LIMIT $${params.length}
   `, params);
   res.json(result.rows);

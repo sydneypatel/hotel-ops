@@ -73,10 +73,8 @@ function BriefingPanel() {
           </button>
         </div>
       </div>
-
       {loading && <div style={{ padding:'20px', textAlign:'center', color:'#9ca3af', fontSize:13 }}>Claude is reviewing your inbox...</div>}
       {error && !loading && <div style={{ padding:'10px 16px', color:'#E24B4A', fontSize:12 }}>{error}</div>}
-
       {expanded && briefing && !loading && (
         <div style={{ padding:'16px 20px' }}>
           <p style={{ margin:'0 0 16px', fontSize:14, color:'#374151', lineHeight:1.6, fontWeight:500 }}>{briefing.headline}</p>
@@ -154,6 +152,35 @@ function Card({ em, hotels, isOpen, onToggle, onStatusChange, onDelete, onDragSt
   );
 }
 
+// ─── Btn (reusable button with hover) ─────────────────────────────────────────
+
+function Btn({ onClick, disabled, children, style = {} }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        fontSize:13, padding:'8px 16px', borderRadius:8,
+        border:'1px solid #e5e7eb',
+        background: hovered ? '#f3f4f6' : '#fff',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        color:'#374151',
+        fontWeight:500,
+        transition:'background 0.12s, border-color 0.12s',
+        borderColor: hovered ? '#d1d5db' : '#e5e7eb',
+        opacity: disabled ? 0.6 : 1,
+        display:'flex', alignItems:'center', gap:6,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -162,6 +189,7 @@ export default function App() {
   const [filter, setFilter]             = useState('All');
   const [openId, setOpenId]             = useState(null);
   const [loading, setLoading]           = useState(true);
+  const [syncing, setSyncing]           = useState(false);
   const [lastSync, setLastSync]         = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab]   = useState('hotels');
@@ -171,8 +199,8 @@ export default function App() {
   const [dragOverCol, setDragOverCol]   = useState(null);
   const [sortNew, setSortNew]           = useState(false);
 
-  // Auto-redirect on 401 (session expired)
   const fetchEmails = useCallback(async () => {
+    setSyncing(true);
     try {
       const res = await fetch(`${API}/api/gmail/emails`, { credentials:'include' });
       if (res.status === 401) { window.location.href = `${API}/api/gmail/connect`; return; }
@@ -181,7 +209,7 @@ export default function App() {
       setEmails(data);
       setLastSync(new Date());
     } catch(e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setSyncing(false); }
   }, []);
 
   const fetchHotels = useCallback(async () => {
@@ -270,16 +298,31 @@ export default function App() {
 
   return (
     <div style={{ fontFamily:'system-ui, sans-serif', background:'#f9fafb', minHeight:'100vh', padding:20, boxSizing:'border-box' }}>
+      <style>{`
+        @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+        .spin { display:inline-block; animation:spin 0.8s linear infinite; }
+        ::-webkit-scrollbar { width:4px; } 
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
+        select { appearance:none; -webkit-appearance:none; }
+      `}</style>
 
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
         <div>
           <h1 style={{ margin:0, fontSize:20, fontWeight:700 }}>Dashboard</h1>
-          <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{lastSync ? `Last sync ${timeAgo(lastSync)}` : 'Loading...'}</div>
+          <div style={{ fontSize:12, color: syncing ? '#BA7517' : '#9ca3af', marginTop:2 }}>
+            {syncing ? '⟳ Syncing...' : lastSync ? `Last sync ${timeAgo(lastSync)}` : 'Loading...'}
+          </div>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={() => { setShowSettings(true); setSettingsTab('hotels'); }} style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>⚙ Settings</button>
-          <button onClick={fetchEmails} style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>↺ Refresh</button>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <Btn onClick={() => { setShowSettings(true); setSettingsTab('hotels'); }}>
+            ⚙ Settings
+          </Btn>
+          <Btn onClick={fetchEmails} disabled={syncing}>
+            <span className={syncing ? 'spin' : ''} style={{ fontSize:14 }}>↺</span>
+            {syncing ? 'Syncing' : 'Refresh'}
+          </Btn>
         </div>
       </div>
 
@@ -300,21 +343,34 @@ export default function App() {
 
       <BriefingPanel />
 
-      {/* Hotel filters */}
-      <div style={{ display:'flex', gap:6, marginBottom:20, flexWrap:'wrap' }}>
-        {['All',...allHotels].map(h => {
-          const active = filter===h;
-          const hc = h==='All' ? '#6b7280' : hotelColor(h, allHotels);
-          return (
-            <button key={h} onClick={() => setFilter(h)} style={{ fontSize:12, padding:'5px 12px', borderRadius:999, cursor:'pointer', border:`1px solid ${active?hc:'#e5e7eb'}`, background:active?hc+'18':'#fff', color:active?hc:'#6b7280', fontWeight:active?600:400, display:'flex', alignItems:'center', gap:5 }}>
-              {active&&h!=='All'&&<span style={{ width:7, height:7, borderRadius:'50%', background:hc, display:'inline-block' }}/>}
-              {h}
-              <span style={{ fontSize:10, padding:'0 4px', borderRadius:999, background:'#f3f4f6', color:'#9ca3af' }}>
-                {h==='All'?emails.length:emails.filter(e=>e.hotel===h).length}
-              </span>
-            </button>
-          );
-        })}
+      {/* Hotel filter — dropdown */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
+        <label style={{ fontSize:12, color:'#6b7280', fontWeight:500, flexShrink:0 }}>Filter by property:</label>
+        <div style={{ position:'relative' }}>
+          <select
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            style={{
+              fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8,
+              border:'1px solid #e5e7eb', background:'#fff', color:'#374151',
+              cursor:'pointer', outline:'none', fontFamily:'system-ui',
+              minWidth:220,
+            }}
+          >
+            <option value="All">All properties ({emails.length})</option>
+            {allHotels.map(h => (
+              <option key={h} value={h}>
+                {h} ({emails.filter(e=>e.hotel===h).length})
+              </option>
+            ))}
+          </select>
+          <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:11 }}>▾</span>
+        </div>
+        {filter !== 'All' && (
+          <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+            × Clear
+          </button>
+        )}
       </div>
 
       {/* Kanban */}
@@ -324,42 +380,46 @@ export default function App() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, alignItems:'flex-start' }}>
           {COLS.map(col => {
             const rawCards = shown.filter(e => e.status===col.key);
-            const cards    = col.key==='new'&&sortNew ? sortByPriority(rawCards) : rawCards;
+            const cards    = col.key==='new' && sortNew ? sortByPriority(rawCards) : rawCards;
             const isOver   = dragOverCol===col.key;
             return (
               <div key={col.key}
                 onDragOver={e=>{e.preventDefault();setDragOverCol(col.key);}}
                 onDragLeave={()=>setDragOverCol(null)}
                 onDrop={()=>handleDrop(col.key)}
-                style={{ background:isOver?col.color+'08':'transparent', borderRadius:10, border:isOver?`2px dashed ${col.color}`:'2px solid transparent', padding:isOver?6:0, transition:'all 0.15s', minHeight:200 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:10, borderBottom:`2px solid ${col.color}`, marginBottom:12 }}>
+                style={{ background:isOver?col.color+'08':'transparent', borderRadius:10, border:isOver?`2px dashed ${col.color}`:'2px solid transparent', padding:isOver?6:0, transition:'all 0.15s' }}>
+                {/* Column header */}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:10, borderBottom:`2px solid ${col.color}`, marginBottom:12, position:'sticky', top:0, background:'#f9fafb', zIndex:1, paddingTop:2 }}>
                   <span style={{ fontSize:13, fontWeight:600, color:col.color }}>{col.label}</span>
                   <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                     <span style={{ fontSize:11, padding:'1px 8px', borderRadius:999, background:col.color+'22', color:col.color, fontWeight:600 }}>{cards.length}</span>
                     {col.key==='new' && (
-                      <button onClick={()=>setSortNew(s=>!s)} style={{ fontSize:11, padding:'2px 8px', borderRadius:6, cursor:'pointer', border:`1px solid ${sortNew?'#6b7280':'#e5e7eb'}`, background:sortNew?'#6b7280':'#fff', color:sortNew?'#fff':'#6b7280' }}>
+                      <button onClick={()=>setSortNew(s=>!s)} style={{ fontSize:11, padding:'2px 8px', borderRadius:6, cursor:'pointer', border:`1px solid ${sortNew?'#6b7280':'#e5e7eb'}`, background:sortNew?'#6b7280':'#fff', color:sortNew?'#fff':'#6b7280', transition:'all 0.12s' }}>
                         {sortNew?'↕ Priority':'↕ Sort'}
                       </button>
                     )}
-                    {col.key==='resolved'&&cards.length>0 && (
+                    {col.key==='resolved' && cards.length>0 && (
                       <button onClick={clearResolved} style={{ fontSize:11, padding:'2px 8px', borderRadius:6, border:'1px solid #fecaca', background:'#fef2f2', color:'#E24B4A', cursor:'pointer' }}>Clear all</button>
                     )}
                   </div>
                 </div>
-                {cards.length===0
-                  ? <div style={{ fontSize:12, color:'#d1d5db', textAlign:'center', padding:'30px 0' }}>—</div>
-                  : cards.map(em => (
-                      <Card key={em.id} em={em} hotels={allHotels}
-                        isOpen={openId===em.id}
-                        onToggle={()=>setOpenId(openId===em.id?null:em.id)}
-                        onStatusChange={s=>updateStatus(em.id,s)}
-                        onDelete={()=>deleteEmail(em.id)}
-                        onDragStart={()=>setDraggingId(em.id)}
-                        onDragEnd={()=>{setDraggingId(null);setDragOverCol(null);}}
-                        isDragging={draggingId===em.id}
-                      />
-                    ))
-                }
+                {/* Scrollable card list */}
+                <div style={{ maxHeight:'calc(100vh - 420px)', overflowY:'auto', paddingRight:2 }}>
+                  {cards.length===0
+                    ? <div style={{ fontSize:12, color:'#d1d5db', textAlign:'center', padding:'30px 0' }}>—</div>
+                    : cards.map(em => (
+                        <Card key={em.id} em={em} hotels={allHotels}
+                          isOpen={openId===em.id}
+                          onToggle={()=>setOpenId(openId===em.id?null:em.id)}
+                          onStatusChange={s=>updateStatus(em.id,s)}
+                          onDelete={()=>deleteEmail(em.id)}
+                          onDragStart={()=>setDraggingId(em.id)}
+                          onDragEnd={()=>{setDraggingId(null);setDragOverCol(null);}}
+                          isDragging={draggingId===em.id}
+                        />
+                      ))
+                  }
+                </div>
               </div>
             );
           })}
@@ -369,7 +429,7 @@ export default function App() {
       {/* Settings modal */}
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#fff', borderRadius:12, padding:24, width:460 }}>
+          <div style={{ background:'#fff', borderRadius:12, padding:24, width:460, maxHeight:'80vh', overflowY:'auto' }}>
             <div style={{ display:'flex', gap:8, marginBottom:18 }}>
               {tabBtn('hotels','🏨 Hotels')}
               {tabBtn('reports','📧 Reports')}
