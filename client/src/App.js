@@ -11,10 +11,10 @@ const COLS = [
   { key:'in_progress', label:'In Progress', color:'#BA7517' },
   { key:'resolved',    label:'Complete',    color:'#1D9E75' },
 ];
-const PRI_COLOR   = { URGENT:'#E24B4A', HIGH:'#BA7517', MEDIUM:'#378ADD', LOW:'#639922' };
-const PRI_ORDER   = { URGENT:0, HIGH:1, MEDIUM:2, LOW:3 };
+const PRI_COLOR    = { URGENT:'#E24B4A', HIGH:'#BA7517', MEDIUM:'#378ADD', LOW:'#639922' };
+const PRI_ORDER    = { URGENT:0, HIGH:1, MEDIUM:2, LOW:3 };
 const HOTEL_COLORS = ['#7F77DD','#1D9E75','#378ADD','#BA7517','#E24B4A','#D4537E','#639922'];
-const CAT_ICON    = { MAINTENANCE:'🔧', GUEST:'🏨', RESERVATIONS:'📅', VENDOR:'📦', STAFF:'👥', ADMIN:'📋', OTHER:'·' };
+const CAT_ICON     = { MAINTENANCE:'🔧', GUEST:'🏨', RESERVATIONS:'📅', VENDOR:'📦', STAFF:'👥', ADMIN:'📋', OTHER:'·' };
 const DEFAULT_CATS = ['MAINTENANCE','GUEST','RESERVATIONS','VENDOR','STAFF','ADMIN','OTHER'];
 
 function hotelColor(name, hotels) {
@@ -119,14 +119,13 @@ function Card({ em, hotels, isOpen, onToggle, onStatusChange, onDelete, onDragSt
   const nextStatus = em.status==='new'?'in_progress':em.status==='in_progress'?'resolved':null;
   const prevLabel  = em.status==='in_progress'?'← New':em.status==='resolved'?'← In Progress':null;
   const nextLabel  = em.status==='new'?'→ Start':em.status==='in_progress'?'✓ Done':null;
-  const catIcon    = CAT_ICON[em.category] || '·';
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       style={{ border:'1px solid #e5e7eb', borderLeft:`3px solid ${hc}`, borderRadius:8, background:'#fff', padding:'10px 12px', marginBottom:8, cursor:'grab', opacity:isDragging?0.4:1, userSelect:'none' }}>
       <div style={{ display:'flex', gap:4, marginBottom:6, flexWrap:'wrap' }} onClick={onToggle}>
         <span style={{ fontSize:11, padding:'2px 7px', borderRadius:4, background:pc+'22', color:pc, fontWeight:700 }}>{em.priority}</span>
         <span style={{ fontSize:11, padding:'2px 7px', borderRadius:4, background:hc+'18', color:hc, fontWeight:600 }}>{em.hotel||'Unknown'}</span>
-        <span style={{ fontSize:11, padding:'2px 7px', borderRadius:4, background:'#f3f4f6', color:'#6b7280' }}>{catIcon} {em.category}</span>
+        <span style={{ fontSize:11, padding:'2px 7px', borderRadius:4, background:'#f3f4f6', color:'#6b7280' }}>{CAT_ICON[em.category]||'·'} {em.category}</span>
         {em.requires_response && <span style={{ fontSize:11, padding:'2px 7px', borderRadius:4, background:'#eff6ff', color:'#3b82f6', fontWeight:500 }}>↩ Reply</span>}
       </div>
       <div onClick={onToggle} style={{ fontSize:13, fontWeight:600, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:isOpen?'normal':'nowrap', marginBottom:3, cursor:'pointer' }}>
@@ -187,25 +186,28 @@ function Dashboard() {
     });
   }, [getToken]);
 
-  const [emails, setEmails]                   = useState([]);
-  const [hotels, setHotels]                   = useState([]);
-  const [gmailConnected, setGmailConnected]   = useState(null);
-  const [filter, setFilter]                   = useState('All');
-  const [categoryFilter, setCategoryFilter]   = useState('All');
-  const [openId, setOpenId]                   = useState(null);
-  const [loading, setLoading]                 = useState(true);
-  const [syncing, setSyncing]                 = useState(false);
-  const [lastSync, setLastSync]               = useState(null);
-  const [showSettings, setShowSettings]       = useState(false);
-  const [settingsTab, setSettingsTab]         = useState('hotels');
-  const [hotelInput, setHotelInput]           = useState('');
-  const [categoriesInput, setCategoriesInput] = useState('');
-  const [reportConfig, setReportConfig]       = useState({ recipients:'', morning:true, midday:true, evening:true });
-  const [reclassifying, setReclassifying]     = useState(false);
+  const [emails, setEmails]                     = useState([]);
+  const [hotels, setHotels]                     = useState([]);
+  const [gmailConnected, setGmailConnected]     = useState(null);
+  const [filter, setFilter]                     = useState('All');
+  const [categoryFilter, setCategoryFilter]     = useState('All');
+  const [openId, setOpenId]                     = useState(null);
+  const [loading, setLoading]                   = useState(true);
+  const [syncing, setSyncing]                   = useState(false);
+  const [lastSync, setLastSync]                 = useState(null);
+  const [showSettings, setShowSettings]         = useState(false);
+  const [settingsTab, setSettingsTab]           = useState('hotels');
+  const [hotelInput, setHotelInput]             = useState('');
+  const [categoriesInput, setCategoriesInput]   = useState('');
+  const [reportConfig, setReportConfig]         = useState({ recipients:'', morning:true, midday:true, evening:true });
+  const [reclassifying, setReclassifying]       = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState(null);
-  const [draggingId, setDraggingId]           = useState(null);
-  const [dragOverCol, setDragOverCol]         = useState(null);
-  const [sortNew, setSortNew]                 = useState(false);
+  const [backfillMonths, setBackfillMonths]     = useState('1');
+  const [backfilling, setBackfilling]           = useState(false);
+  const [backfillResult, setBackfillResult]     = useState(null);
+  const [draggingId, setDraggingId]             = useState(null);
+  const [dragOverCol, setDragOverCol]           = useState(null);
+  const [sortNew, setSortNew]                   = useState(false);
 
   const checkStatus = useCallback(async () => {
     const res  = await authFetch(`${API}/api/gmail/status`);
@@ -218,8 +220,7 @@ function Dashboard() {
     try {
       const res = await authFetch(`${API}/api/gmail/emails`);
       if (!res.ok) return;
-      const data = await res.json();
-      setEmails(data);
+      setEmails(await res.json());
       setLastSync(new Date());
     } catch(e) { console.error(e); }
     finally { setLoading(false); setSyncing(false); }
@@ -255,10 +256,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (!gmailConnected) return;
-    fetchEmails();
-    fetchHotels();
-    fetchCategories();
-    fetchReportConfig();
+    fetchEmails(); fetchHotels(); fetchCategories(); fetchReportConfig();
     const t = setInterval(fetchEmails, 30000);
     return () => clearInterval(t);
   }, [gmailConnected, fetchEmails, fetchHotels, fetchCategories, fetchReportConfig]);
@@ -266,14 +264,13 @@ function Dashboard() {
   useEffect(() => { setHotelInput(hotels.join('\n')); }, [hotels]);
 
   async function connectGmail() {
-    const res      = await authFetch(`${API}/api/gmail/auth-url`);
-    const { url }  = await res.json();
+    const res = await authFetch(`${API}/api/gmail/auth-url`);
+    const { url } = await res.json();
     window.location.href = url;
   }
 
   async function triggerReclassify(scope) {
-    setReclassifying(true);
-    setReclassifyResult(null);
+    setReclassifying(true); setReclassifyResult(null);
     try {
       const res  = await authFetch(`${API}/api/gmail/reclassify?scope=${scope}`, { method:'POST' });
       const data = await res.json();
@@ -286,19 +283,15 @@ function Dashboard() {
   async function saveHotels(list) {
     await authFetch(`${API}/api/gmail/hotels`, { method:'PUT', body: JSON.stringify({ hotels: list }) });
     setHotels(list);
-    // Re-classify Unknown hotel emails with new hotel list
     await triggerReclassify('unknown');
     setShowSettings(false);
   }
 
   async function saveCategories() {
     const categories = categoriesInput
-      .split('\n')
-      .map(c => c.trim().toUpperCase().replace(/\s+/g, '_'))
-      .filter(Boolean)
-      .filter(c => !DEFAULT_CATS.includes(c)); // don't duplicate defaults
+      .split('\n').map(c => c.trim().toUpperCase().replace(/\s+/g, '_')).filter(Boolean)
+      .filter(c => !DEFAULT_CATS.includes(c));
     await authFetch(`${API}/api/gmail/categories`, { method:'PUT', body: JSON.stringify({ categories }) });
-    // Re-classify OTHER emails with new categories
     await triggerReclassify('other');
   }
 
@@ -313,6 +306,17 @@ function Dashboard() {
       }),
     });
     setShowSettings(false);
+  }
+
+  async function runBackfill() {
+    setBackfilling(true); setBackfillResult(null);
+    try {
+      const res  = await authFetch(`${API}/api/gmail/backfill?months=${backfillMonths}`, { method:'POST' });
+      const data = await res.json();
+      setBackfillResult(data);
+      await fetchEmails();
+    } catch(e) { console.error('[backfill]', e); }
+    finally { setBackfilling(false); }
   }
 
   async function updateStatus(id, status) {
@@ -336,14 +340,16 @@ function Dashboard() {
   }
 
   const shown = emails
-  .filter(e => filter === 'All' || e.hotel === filter)
-  .filter(e => categoryFilter === 'All' || e.category === categoryFilter);
+    .filter(e => filter === 'All' || e.hotel === filter)
+    .filter(e => categoryFilter === 'All' || e.category === categoryFilter);
+
   const urgentN   = emails.filter(e => e.priority==='URGENT').length;
   const replyN    = emails.filter(e => e.requires_response && e.status!=='resolved').length;
   const allHotels = [...new Set([...hotels, ...emails.map(e=>e.hotel).filter(h=>h&&h!=='Unknown')])];
+  const allCats   = [...new Set(emails.map(e=>e.category).filter(Boolean))].sort();
 
   const tabBtn = (key, label) => (
-    <button onClick={() => { setSettingsTab(key); setReclassifyResult(null); }}
+    <button onClick={() => { setSettingsTab(key); setReclassifyResult(null); setBackfillResult(null); }}
       style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none',
         background: settingsTab===key ? '#111' : '#f3f4f6',
         color: settingsTab===key ? '#fff' : '#6b7280',
@@ -352,8 +358,7 @@ function Dashboard() {
     </button>
   );
 
-  // ─── Gmail not connected ───────────────────────────────────────────────────
-
+  // Connect Gmail screen
   if (gmailConnected === false) {
     return (
       <div style={{ fontFamily:'system-ui, sans-serif', minHeight:'100vh', background:'#f9fafb', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -370,8 +375,6 @@ function Dashboard() {
       </div>
     );
   }
-
-  // ─── Main dashboard ────────────────────────────────────────────────────────
 
   return (
     <div style={{ fontFamily:'system-ui, sans-serif', background:'#f9fafb', minHeight:'100vh', padding:20, boxSizing:'border-box' }}>
@@ -393,7 +396,7 @@ function Dashboard() {
           </div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <Btn onClick={() => { setShowSettings(true); setSettingsTab('hotels'); setReclassifyResult(null); }}>⚙️ Settings</Btn>
+          <Btn onClick={() => { setShowSettings(true); setSettingsTab('hotels'); setReclassifyResult(null); setBackfillResult(null); }}>⚙️ Settings</Btn>
           <Btn onClick={fetchEmails} disabled={syncing}>
             <span className={syncing ? 'spin' : ''} style={{ fontSize:16 }}>🔄</span>
             {syncing ? 'Syncing' : 'Refresh'}
@@ -419,32 +422,28 @@ function Dashboard() {
 
       <BriefingPanel authFetch={authFetch} />
 
-      {/* Hotel filter */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
+      {/* Filters row */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20, flexWrap:'wrap' }}>
         <label style={{ fontSize:12, color:'#6b7280', fontWeight:500, flexShrink:0 }}>Filter by property:</label>
         <div style={{ position:'relative' }}>
           <select value={filter} onChange={e => setFilter(e.target.value)}
-            style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:220 }}>
+            style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:200 }}>
             <option value="All">All ({emails.length})</option>
             {allHotels.map(h => <option key={h} value={h}>{h} ({emails.filter(e=>e.hotel===h).length})</option>)}
           </select>
           <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
         </div>
-        {filter !== 'All' && <button onClick={() => setFilter('All')} style={{ fontSize: 12, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>× Clear</button>}
-        
+        {filter !== 'All' && <button onClick={() => setFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
+
         <div style={{ position:'relative' }}>
           <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
             style={{ fontSize:13, padding:'7px 32px 7px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui', minWidth:160 }}>
             <option value="All">All categories</option>
-            {[...new Set(emails.map(e => e.category).filter(Boolean))].sort().map(c => (
-              <option key={c} value={c}>{c} ({emails.filter(e=>e.category===c).length})</option>
-            ))}
+            {allCats.map(c => <option key={c} value={c}>{c} ({emails.filter(e=>e.category===c).length})</option>)}
           </select>
           <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#9ca3af', fontSize:14 }}>▾</span>
         </div>
-        {categoryFilter !== 'All' && (
-          <button onClick={() => setCategoryFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>
-        )}
+        {categoryFilter !== 'All' && <button onClick={() => setCategoryFilter('All')} style={{ fontSize:12, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0 }}>× Clear</button>}
       </div>
 
       {/* Kanban */}
@@ -502,17 +501,18 @@ function Dashboard() {
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}
           onClick={e => { if (e.target === e.currentTarget) setShowSettings(false); }}>
-          <div style={{ background:'#fff', borderRadius:12, padding:24, width:480, maxHeight:'80vh', overflowY:'auto' }}>
-            <div style={{ display:'flex', gap:8, marginBottom:18 }}>
+          <div style={{ background:'#fff', borderRadius:12, padding:24, width:500, maxHeight:'82vh', overflowY:'auto' }}>
+            <div style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap' }}>
               {tabBtn('hotels','🏨 Hotels')}
               {tabBtn('categories','🏷 Categories')}
               {tabBtn('reports','📧 Reports')}
+              {tabBtn('import','📥 Import')}
             </div>
 
-            {/* Hotels tab */}
+            {/* Hotels */}
             {settingsTab==='hotels' && (
               <>
-                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>One hotel name per line. Claude uses these to classify which property each email belongs to. Saving will re-classify any "Unknown" emails.</p>
+                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>One hotel name per line. Saving re-classifies any "Unknown" emails.</p>
                 <textarea rows={8} value={hotelInput} onChange={e=>setHotelInput(e.target.value)}
                   placeholder={'Courtyard by Marriott, Connecticut\nResidence Inn, Boston\n...'}
                   style={{ width:'100%', fontSize:13, padding:10, borderRadius:8, border:'1px solid #e5e7eb', resize:'vertical', boxSizing:'border-box', fontFamily:'system-ui' }}
@@ -522,44 +522,38 @@ function Dashboard() {
                 <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 }}>
                   <button onClick={()=>setShowSettings(false)} style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>Cancel</button>
                   <button onClick={()=>saveHotels(hotelInput.split('\n').map(h=>h.trim()).filter(Boolean))} disabled={reclassifying}
-                    style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor: reclassifying ? 'wait' : 'pointer', opacity: reclassifying ? 0.7 : 1 }}>
+                    style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor: reclassifying?'wait':'pointer', opacity:reclassifying?0.7:1 }}>
                     {reclassifying ? 'Saving...' : 'Save & Re-classify'}
                   </button>
                 </div>
               </>
             )}
 
-            {/* Categories tab */}
+            {/* Categories */}
             {settingsTab==='categories' && (
               <>
                 <div style={{ marginBottom:14 }}>
                   <div style={{ fontSize:12, fontWeight:600, color:'#374151', marginBottom:8 }}>Default categories</div>
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {DEFAULT_CATS.map(c => (
-                      <span key={c} style={{ fontSize:11, padding:'3px 8px', borderRadius:4, background:'#f3f4f6', color:'#6b7280', fontFamily:'monospace' }}>{c}</span>
-                    ))}
+                    {DEFAULT_CATS.map(c => <span key={c} style={{ fontSize:11, padding:'3px 8px', borderRadius:4, background:'#f3f4f6', color:'#6b7280', fontFamily:'monospace' }}>{c}</span>)}
                   </div>
                 </div>
-                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Add custom categories (one per line). Saving will re-classify all "OTHER" emails with the new categories.</p>
+                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Custom categories (one per line). Saving re-classifies all "OTHER" emails.</p>
                 <textarea rows={5} value={categoriesInput} onChange={e=>setCategoriesInput(e.target.value)}
                   placeholder={'VIP_GUEST\nF&B\nEMERGENCY\nLEGAL'}
                   style={{ width:'100%', fontSize:13, padding:10, borderRadius:8, border:'1px solid #e5e7eb', resize:'vertical', boxSizing:'border-box', fontFamily:'monospace', marginBottom:10 }}
                 />
-                {reclassifying && <div style={{ fontSize:12, color:'#BA7517', marginBottom:8 }}>⟳ Re-classifying OTHER emails... this may take a moment.</div>}
-                {reclassifyResult && !reclassifying && (
-                  <div style={{ fontSize:12, color:'#1D9E75', marginBottom:8 }}>
-                    ✓ Re-classified {reclassifyResult.updated} of {reclassifyResult.total} emails
-                  </div>
-                )}
-                <div style={{ display:'flex', gap:8, justifyContent:'space-between', alignItems:'center', marginTop:4 }}>
+                {reclassifying && <div style={{ fontSize:12, color:'#BA7517', marginBottom:8 }}>⟳ Re-classifying OTHER emails...</div>}
+                {reclassifyResult && !reclassifying && <div style={{ fontSize:12, color:'#1D9E75', marginBottom:8 }}>✓ Re-classified {reclassifyResult.updated} of {reclassifyResult.total} emails</div>}
+                <div style={{ display:'flex', gap:8, justifyContent:'space-between', alignItems:'center' }}>
                   <button onClick={() => triggerReclassify('all')} disabled={reclassifying}
-                    style={{ fontSize:12, color:'#6b7280', background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'5px 12px', cursor: reclassifying ? 'wait' : 'pointer' }}>
+                    style={{ fontSize:12, color:'#6b7280', background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'5px 12px', cursor: reclassifying?'wait':'pointer' }}>
                     Re-run all emails
                   </button>
                   <div style={{ display:'flex', gap:8 }}>
                     <button onClick={()=>setShowSettings(false)} style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>Cancel</button>
                     <button onClick={saveCategories} disabled={reclassifying}
-                      style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor: reclassifying ? 'wait' : 'pointer', opacity: reclassifying ? 0.7 : 1 }}>
+                      style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor:reclassifying?'wait':'pointer', opacity:reclassifying?0.7:1 }}>
                       {reclassifying ? 'Re-classifying...' : 'Save & Re-classify'}
                     </button>
                   </div>
@@ -567,10 +561,10 @@ function Dashboard() {
               </>
             )}
 
-            {/* Reports tab */}
+            {/* Reports */}
             {settingsTab==='reports' && (
               <>
-                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Recipient emails (one per line). These people will receive scheduled briefings.</p>
+                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 10px' }}>Recipient emails (one per line).</p>
                 <textarea rows={4} value={reportConfig.recipients} onChange={e=>setReportConfig(c=>({...c,recipients:e.target.value}))}
                   placeholder={'boss@company.com\nmanager@company.com'}
                   style={{ width:'100%', fontSize:13, padding:10, borderRadius:8, border:'1px solid #e5e7eb', resize:'vertical', boxSizing:'border-box', fontFamily:'system-ui', marginBottom:14 }}
@@ -588,14 +582,51 @@ function Dashboard() {
                 </div>
               </>
             )}
+
+            {/* Import */}
+            {settingsTab==='import' && (
+              <>
+                <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 14px' }}>
+                  Pull historical emails from your Gmail inbox into the dashboard. Emails already imported will be skipped.
+                </p>
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:8 }}>Import emails from the last:</label>
+                  <select value={backfillMonths} onChange={e => setBackfillMonths(e.target.value)}
+                    style={{ fontSize:13, padding:'8px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', cursor:'pointer', outline:'none', fontFamily:'system-ui' }}>
+                    <option value="1">1 month</option>
+                    <option value="2">2 months</option>
+                    <option value="3">3 months</option>
+                    <option value="6">6 months</option>
+                  </select>
+                </div>
+                <div style={{ background:'#f8fafc', borderRadius:8, padding:'10px 12px', marginBottom:14, fontSize:12, color:'#6b7280', lineHeight:1.6 }}>
+                  ⏱ Up to 200 emails will be fetched and classified by Claude. This may take 2–5 minutes. The dashboard refreshes automatically when done.
+                </div>
+                {backfilling && (
+                  <div style={{ fontSize:13, color:'#BA7517', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
+                    <span className="spin">⟳</span> Importing emails — this may take a few minutes...
+                  </div>
+                )}
+                {backfillResult && !backfilling && (
+                  <div style={{ fontSize:13, color:'#1D9E75', marginBottom:10, background:'#f0fdf4', padding:'10px 12px', borderRadius:8 }}>
+                    ✓ Imported {backfillResult.saved} new emails · {backfillResult.skipped} already existed · {backfillResult.total} total found
+                  </div>
+                )}
+                <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                  <button onClick={()=>setShowSettings(false)} style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>Cancel</button>
+                  <button onClick={runBackfill} disabled={backfilling}
+                    style={{ fontSize:13, padding:'6px 14px', borderRadius:8, border:'none', background:'#111', color:'#fff', cursor:backfilling?'wait':'pointer', opacity:backfilling?0.7:1 }}>
+                    {backfilling ? 'Importing...' : 'Import Emails'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 }
-
-// ─── App wrapper ──────────────────────────────────────────────────────────────
 
 export default function App() {
   return (

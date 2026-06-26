@@ -8,6 +8,7 @@ const {
 const { classifyEmail, generateBriefing } = require('../lib/claude');
 const { sendReport } = require('../lib/email');
 const { db } = require('../lib/db');
+const { getAuthUrl, exchangeCode, makeGmailClient, getUserEmail, registerWatch, listMessages } = require('../lib/gmail');
 
 // ─── Helper: look up our DB user by Clerk user ID ─────────────────────────────
 
@@ -230,6 +231,74 @@ router.post('/reclassify', requireAuth(), async (req, res) => {
 
   console.log(`[reclassify] scope=${scope} updated=${updated}/${emails.rows.length}`);
   res.json({ ok: true, updated, total: emails.rows.length });
+});
+
+router.post('/backfill', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+
+  const { months = 1 } = req.query;
+
+  const conn = await db.query(
+    'SELECT * FROM gmail_connections WHERE user_id = $1',
+    [user.id]
+  );
+  if (!conn.rows.length) return res.status(400).json({ error: 'Gmail not connected' });
+
+  const gmail = await makeGmailClient(conn.rows[0].access_token, conn.rows[0].refresh_token);
+
+  const configResult = await db.query(
+    'SELECT hotel_names, custom_categories FROM hotel_configs WHERE user_id = $1',
+    [user.id]
+  );
+  const hotelNames       = configResult.rows[0]?.hotel_names || [];
+  const customCategories = configResult.rows[0]?.custom_categories || [];
+
+  console.log(`[backfill] Fetching inbox from last ${months} month(s) for user ${user.id}`);
+  const messages = await listMessages(gmail, { months: parseInt(months), maxResults: 200 });
+  console.log(`[backfill] Found ${messages.length} messages`);
+
+  let saved = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const msg of messages) {
+    // Skip if already in DB
+    const existing = await db.query(
+      'SELECT id FROM emails WHERE user_id = $1 AND gmail_message_id = $2',
+      [user.id, msg.id]
+    );
+    if (existing.rows.length) { skipped++; continue; }
+
+    try {
+      const details        = await getEmailDetails(gmail, msg.id);
+      const classification = await classifyEmail(details, hotelNames, customCategories);
+
+      await db.query(`
+        INSERT INTO emails
+          (user_id, gmail_message_id, subject, sender, hotel, category, priority,
+           summary, action_items, requires_response, status, received_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'new',$11)
+        ON CONFLICT DO NOTHING
+      `, [
+        user.id, msg.id,
+        details.subject, details.from,
+        classification.hotel, classification.category, classification.priority,
+        classification.summary, classification.action_items, classification.requires_response,
+        details.date ? new Date(details.date) : new Date(),
+      ]);
+      saved++;
+
+      // Delay to avoid Gmail API rate limits
+      await new Promise(r => setTimeout(r, 150));
+    } catch(e) {
+      console.error(`[backfill] Failed for ${msg.id}:`, e.message);
+      failed++;
+    }
+  }
+
+  console.log(`[backfill] Done — saved:${saved} skipped:${skipped} failed:${failed} total:${messages.length}`);
+  res.json({ ok: true, saved, skipped, failed, total: messages.length });
 });
 
 // ─── Briefing ─────────────────────────────────────────────────────────────────

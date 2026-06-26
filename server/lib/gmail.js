@@ -8,7 +8,6 @@ function makeOAuth2Client() {
   );
 }
 
-// state = Clerk user ID, passed through OAuth so we know who's connecting
 function getAuthUrl(state = '') {
   const client = makeOAuth2Client();
   return client.generateAuthUrl({
@@ -51,10 +50,6 @@ async function registerWatch(gmail) {
     },
   });
   return data;
-}
-
-async function stopWatch(gmail) {
-  await gmail.users.stop({ userId: 'me' }).catch(() => {});
 }
 
 async function getNewMessageIds(gmail, startHistoryId) {
@@ -102,13 +97,38 @@ async function getEmailDetails(gmail, messageId) {
   };
 }
 
+// List messages from inbox with optional date filter
+async function listMessages(gmail, { months = 1, maxResults = 200 } = {}) {
+  const after = new Date();
+  after.setMonth(after.getMonth() - parseInt(months));
+  const afterStr = `${after.getFullYear()}/${String(after.getMonth()+1).padStart(2,'0')}/${String(after.getDate()).padStart(2,'0')}`;
+
+  const allMessages = [];
+  let pageToken = null;
+
+  do {
+    const params = {
+      userId: 'me',
+      q: `in:inbox after:${afterStr}`,
+      maxResults: Math.min(maxResults - allMessages.length, 100),
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    const { data } = await gmail.users.messages.list(params);
+    if (data.messages) allMessages.push(...data.messages);
+    pageToken = data.nextPageToken || null;
+  } while (pageToken && allMessages.length < maxResults);
+
+  return allMessages;
+}
+
 module.exports = {
   getAuthUrl,
   exchangeCode,
   makeGmailClient,
   getUserEmail,
   registerWatch,
-  stopWatch,
   getNewMessageIds,
   getEmailDetails,
+  listMessages,
 };
