@@ -12,8 +12,12 @@ const PORT = process.env.PORT || 3001;
 app.set('trust proxy', 1);
 
 app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: false, // JWT auth — no cookies needed
+  origin: [
+    process.env.CLIENT_URL,
+    'https://www.foyer-ai.com',
+    'https://foyer-ai.com',
+  ],
+  credentials: false,
 }));
 
 // Webhook uses raw body — must be before express.json()
