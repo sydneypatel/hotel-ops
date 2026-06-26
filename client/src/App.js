@@ -225,7 +225,7 @@ function Dashboard() {
       setLastSync(new Date());
     } catch(e) { console.error(e); }
     finally { setLoading(false); setSyncing(false); }
-  }, [authFetch]);
+  }, [authFetch, emailLimit]);
 
   const fetchHotels = useCallback(async () => {
     const res = await authFetch(`${API}/api/gmail/hotels`);
