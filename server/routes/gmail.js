@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('@clerk/express');
+const { requireAuth, getAuth } = require('@clerk/express');
 const {
   getAuthUrl, exchangeCode, makeGmailClient,
   getUserEmail, registerWatch,
@@ -11,18 +11,20 @@ const { db } = require('../lib/db');
 
 // ─── Helper: look up our DB user by Clerk user ID ─────────────────────────────
 
-async function getUserByClerk(clerkUserId) {
-  const result = await db.query('SELECT * FROM users WHERE clerk_id = $1', [clerkUserId]);
+async function getUserByClerk(req) {
+  const { userId } = getAuth(req);
+  if (!userId) return null;
+  const result = await db.query('SELECT * FROM users WHERE clerk_id = $1', [userId]);
   return result.rows[0] || null;
 }
 
 // ─── Auth URL — frontend calls this, then redirects user to the returned URL ──
 
 router.get('/auth-url', requireAuth(), (req, res) => {
-  console.log('[auth-url] req.auth:', JSON.stringify(req.auth));
-  const clerkUserId = req.auth?.userId;
-  if (!clerkUserId) return res.status(401).json({ error: 'No userId' });
-  const url = getAuthUrl(clerkUserId);
+  const { userId } = getAuth(req);
+  console.log('[auth-url] userId:', userId);
+  if (!userId) return res.status(401).json({ error: 'No userId' });
+  const url = getAuthUrl(userId);
   res.json({ url });
 });
 
@@ -82,7 +84,7 @@ router.get('/callback', async (req, res) => {
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 router.get('/status', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.json({ connected: false });
   const r = await db.query('SELECT gmail_email, watch_expiry FROM gmail_connections WHERE user_id = $1', [user.id]);
   if (!r.rows.length) return res.json({ connected: false });
@@ -92,7 +94,7 @@ router.get('/status', requireAuth(), async (req, res) => {
 // ─── Emails ───────────────────────────────────────────────────────────────────
 
 router.get('/emails', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Connect Gmail first' });
 
   const { hotel, priority, status, limit = 100 } = req.query;
@@ -111,7 +113,7 @@ router.get('/emails', requireAuth(), async (req, res) => {
 });
 
 router.patch('/emails/:id/status', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   const { status } = req.body;
   if (!['new','in_progress','resolved'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -120,14 +122,14 @@ router.patch('/emails/:id/status', requireAuth(), async (req, res) => {
 });
 
 router.delete('/emails/:id', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   await db.query('DELETE FROM emails WHERE id = $1 AND user_id = $2', [req.params.id, user.id]);
   res.json({ ok: true });
 });
 
 router.delete('/emails', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   await db.query("DELETE FROM emails WHERE user_id = $1 AND status = 'resolved'", [user.id]);
   res.json({ ok: true });
@@ -136,14 +138,14 @@ router.delete('/emails', requireAuth(), async (req, res) => {
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
 router.get('/hotels', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.json({ hotels: [] });
   const r = await db.query('SELECT hotel_names FROM hotel_configs WHERE user_id = $1', [user.id]);
   res.json({ hotels: r.rows[0]?.hotel_names || [] });
 });
 
 router.put('/hotels', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   await db.query(`
     INSERT INTO hotel_configs (user_id, hotel_names) VALUES ($1, $2)
@@ -155,7 +157,7 @@ router.put('/hotels', requireAuth(), async (req, res) => {
 // ─── Briefing ─────────────────────────────────────────────────────────────────
 
 router.get('/briefing', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   try {
     const emailsResult = await db.query(`
@@ -179,14 +181,14 @@ router.get('/briefing', requireAuth(), async (req, res) => {
 // ─── Report Config ────────────────────────────────────────────────────────────
 
 router.get('/report-config', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.json({ recipient_emails: [], send_morning: true, send_midday: true, send_evening: true });
   const r = await db.query('SELECT * FROM report_configs WHERE user_id = $1', [user.id]);
   res.json(r.rows[0] || { recipient_emails: [], send_morning: true, send_midday: true, send_evening: true });
 });
 
 router.put('/report-config', requireAuth(), async (req, res) => {
-  const user = await getUserByClerk(req.auth.userId);
+  const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
   const { recipient_emails, send_morning, send_midday, send_evening } = req.body;
   await db.query(`
