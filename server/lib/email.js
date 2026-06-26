@@ -77,9 +77,9 @@ async function sendReport(recipients, timeLabel, briefing, stats) {
   const now = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
 
   const { data, error } = await resend.emails.send({
-    from: 'Hotel Ops <onboarding@resend.dev>',
+    from: 'Foyer <reports@foyer-ai.com>',
     to: recipients,
-    subject: `Hotel Ops — ${timeLabel} | ${now}`,
+    subject: `Foyer — ${timeLabel} | ${now}`,
     html: buildHtml(timeLabel, briefing, stats),
   });
 
