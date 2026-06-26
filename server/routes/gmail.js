@@ -154,6 +154,84 @@ router.put('/hotels', requireAuth(), async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+router.get('/categories', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req);
+  if (!user) return res.json({ categories: [] });
+  const r = await db.query('SELECT custom_categories FROM hotel_configs WHERE user_id = $1', [user.id]);
+  res.json({ categories: r.rows[0]?.custom_categories || [] });
+});
+
+router.put('/categories', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  const { categories } = req.body;
+  await db.query(`
+    INSERT INTO hotel_configs (user_id, custom_categories) VALUES ($1, $2)
+    ON CONFLICT (user_id) DO UPDATE SET custom_categories = EXCLUDED.custom_categories
+  `, [user.id, categories]);
+  res.json({ ok: true });
+});
+
+// ─── Reclassify ───────────────────────────────────────────────────────────────
+// scope=other   → emails with category = 'OTHER'
+// scope=unknown → emails with hotel = 'Unknown'
+// scope=both    → OTHER category OR Unknown hotel (default)
+// scope=all     → all emails (full rerun)
+
+router.post('/reclassify', requireAuth(), async (req, res) => {
+  const user = await getUserByClerk(req);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+
+  const { scope = 'both' } = req.query;
+
+  const configResult = await db.query(
+    'SELECT custom_categories, hotel_names FROM hotel_configs WHERE user_id = $1',
+    [user.id]
+  );
+  const customCategories = configResult.rows[0]?.custom_categories || [];
+  const hotelNames       = configResult.rows[0]?.hotel_names || [];
+
+  const queries = {
+    other:   "SELECT * FROM emails WHERE user_id = $1 AND category = 'OTHER' ORDER BY received_at DESC LIMIT 50",
+    unknown: "SELECT * FROM emails WHERE user_id = $1 AND hotel = 'Unknown' ORDER BY received_at DESC LIMIT 50",
+    both:    "SELECT * FROM emails WHERE user_id = $1 AND (category = 'OTHER' OR hotel = 'Unknown') ORDER BY received_at DESC LIMIT 50",
+    all:     "SELECT * FROM emails WHERE user_id = $1 ORDER BY received_at DESC LIMIT 100",
+  };
+
+  const emails = await db.query(queries[scope] || queries.both, [user.id]);
+  let updated = 0;
+
+  for (const email of emails.rows) {
+    try {
+      const classification = await classifyEmail({
+        subject: email.subject,
+        from:    email.sender,
+        snippet: email.summary || email.subject,
+        body:    '',
+      }, hotelNames, customCategories);
+
+      await db.query(`
+        UPDATE emails SET
+          hotel = $1, category = $2, priority = $3,
+          summary = $4, action_items = $5, requires_response = $6
+        WHERE id = $7
+      `, [
+        classification.hotel, classification.category, classification.priority,
+        classification.summary, classification.action_items, classification.requires_response,
+        email.id,
+      ]);
+      updated++;
+    } catch(e) {
+      console.error(`[reclassify] Failed for email ${email.id}:`, e.message);
+    }
+  }
+
+  console.log(`[reclassify] scope=${scope} updated=${updated}/${emails.rows.length}`);
+  res.json({ ok: true, updated, total: emails.rows.length });
+});
+
 // ─── Briefing ─────────────────────────────────────────────────────────────────
 
 router.get('/briefing', requireAuth(), async (req, res) => {
