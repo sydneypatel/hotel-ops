@@ -358,7 +358,7 @@ export default function App() {
               minWidth:220,
             }}
           >
-            <option value="All">All ({emails.length})</option>
+            <option value="All">All Emails ({emails.length})</option>
             {allHotels.map(h => (
               <option key={h} value={h}>
                 {h} ({emails.filter(e=>e.hotel===h).length})
@@ -378,7 +378,7 @@ export default function App() {
       {loading ? (
         <div style={{ textAlign:'center', padding:60, color:'#9ca3af' }}>Loading emails...</div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, alignItems:'flex-start' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:16, alignItems:'flex-start' }}>
           {COLS.map(col => {
             const rawCards = shown.filter(e => e.status===col.key);
             const cards    = col.key==='new' && sortNew ? sortByPriority(rawCards) : rawCards;
