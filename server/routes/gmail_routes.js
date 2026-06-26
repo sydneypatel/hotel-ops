@@ -75,6 +75,7 @@ router.get('/emails', async (req, res) => {
   res.json(result.rows);
 });
 
+
 router.patch('/emails/:id/status', async (req, res) => {
   const userId = req.session?.userId;
   if (!userId) return res.status(401).json({ error: 'Not authenticated' });
