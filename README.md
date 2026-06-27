@@ -4,7 +4,7 @@
 
 Foyer connects to a Gmail inbox, classifies every incoming email by hotel property and category using Claude, and displays a real-time kanban dashboard with AI-generated briefings and scheduled, emailed daily reports.
 
-Live at [foyer-ai.com](https://foyer-ai.com) (in Testing phase)
+Live at [foyer-ai.com](https://foyer-ai.com) (Testing)
 
 ---
 
@@ -25,13 +25,13 @@ Live at [foyer-ai.com](https://foyer-ai.com) (in Testing phase)
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React (CRA), deployed on Vercel |
+| Frontend | React, deployed on Vercel |
 | Backend | Node.js / Express, deployed on Railway |
 | Database | PostgreSQL (Railway) |
 | Auth | Clerk (production instance, `foyer-ai.com`) |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
 | Email delivery | Gmail API + Google Cloud Pub/Sub (inbound), Resend (outbound reports) |
-| Scheduling | cron-job.org (4 jobs: watch renewal + 3 report sends) |
+| Scheduling | cron-job.org (4 jobs: watch renewal cron + 3 report sends) |
 | Domain | Namecheap → `foyer-ai.com` |
 
 ---
@@ -103,89 +103,9 @@ emails              -- full classification + status + soft delete
 
 ---
 
-## Setup
+## Get started
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL database
-- Google Cloud project with Gmail API + Pub/Sub enabled
-- Clerk account (production instance)
-- Resend account
-- Anthropic API key
-
-### Environment variables
-
-**Server (`server/.env`):**
-```
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=https://your-railway-url/api/gmail/callback
-GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-PUBSUB_TOPIC=gmail-push-notifications
-ANTHROPIC_API_KEY=
-DATABASE_URL=
-CLERK_SECRET_KEY=sk_live_...
-CLERK_PUBLISHABLE_KEY=pk_live_...
-CLIENT_URL=https://foyer-ai.com
-RESEND_API_KEY=
-CRON_SECRET=
-```
-
-**Client (`client/.env`):**
-```
-REACT_APP_CLERK_PUBLISHABLE_KEY=pk_live_...
-```
-
-### Database setup
-```sql
--- Run schema.sql then migrations:
-ALTER TABLE users ADD COLUMN IF NOT EXISTS clerk_id TEXT UNIQUE;
-ALTER TABLE emails ADD COLUMN IF NOT EXISTS gmail_message_id TEXT;
-ALTER TABLE emails ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
-ALTER TABLE hotel_configs ADD COLUMN IF NOT EXISTS custom_categories TEXT[] DEFAULT '{}';
-CREATE TABLE report_configs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-  recipient_emails TEXT[] DEFAULT '{}',
-  send_morning BOOLEAN DEFAULT TRUE,
-  send_midday BOOLEAN DEFAULT TRUE,
-  send_evening BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS emails_msg_idx 
-  ON emails(user_id, gmail_message_id) WHERE gmail_message_id IS NOT NULL;
-```
-
-### Google Cloud setup
-1. Create a project and enable Gmail API + Pub/Sub API
-2. Create an OAuth 2.0 client (Web application)
-3. Add authorized redirect URI: `https://your-railway-url/api/gmail/callback`
-4. Add `https://clerk.foyer-ai.com/v1/oauth_callback` for Clerk SSO
-5. Create Pub/Sub topic `gmail-push-notifications`
-6. Create push subscription pointing to `https://your-railway-url/webhook/gmail`
-
-### Cron jobs (cron-job.org)
-| Job | URL | Schedule | Header |
-|-----|-----|----------|--------|
-| Watch renewal | `/api/gmail/renew-watches` | 6am ET daily | — |
-| Morning report | `/api/gmail/report-send?time=morning` | 7am ET daily | `x-cron-secret` |
-| Midday report | `/api/gmail/report-send?time=midday` | 12pm ET daily | `x-cron-secret` |
-| Evening report | `/api/gmail/report-send?time=evening` | 6pm ET daily | `x-cron-secret` |
-
-### Local development
-```bash
-# Server
-cd server
-npm install
-npm run dev   # nodemon index.js on :3001
-
-# Client
-cd client
-npm install
-npm start     # CRA dev server on :3000
-```
-
----
+Foyer is currently in private beta. Request test access at [sydney.j.patel@gmail.com](mailto:sydney.j.patel@gmail.com)
 
 ## Key features in depth
 
