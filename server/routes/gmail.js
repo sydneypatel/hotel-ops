@@ -99,7 +99,7 @@ router.get('/emails', requireAuth(), async (req, res) => {
 
   const { hotel, priority, status, limit = 500 } = req.query;
   const params = [user.id];
-  const conditions = ['user_id = $1'];
+  const conditions = ['user_id = $1', 'deleted_at IS NULL'];
   if (hotel && hotel !== 'all')    { params.push(hotel);    conditions.push(`hotel = $${params.length}`); }
   if (priority && priority !== 'all') { params.push(priority); conditions.push(`priority = $${params.length}`); }
   if (status && status !== 'all')  { params.push(status);   conditions.push(`status = $${params.length}`); }
@@ -124,14 +124,13 @@ router.patch('/emails/:id/status', requireAuth(), async (req, res) => {
 router.delete('/emails/:id', requireAuth(), async (req, res) => {
   const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
-  await db.query('DELETE FROM emails WHERE id = $1 AND user_id = $2', [req.params.id, user.id]);
-  res.json({ ok: true });
+  await db.query('UPDATE emails SET deleted_at = NOW() WHERE id = $1 AND user_id = $2', [req.params.id, user.id]);  res.json({ ok: true });
 });
 
 router.delete('/emails', requireAuth(), async (req, res) => {
   const user = await getUserByClerk(req);
   if (!user) return res.status(404).json({ error: 'Not found' });
-  await db.query("DELETE FROM emails WHERE user_id = $1 AND status = 'resolved'", [user.id]);
+  await db.query("UPDATE emails SET deleted_at = NOW() WHERE user_id = $1 AND status = 'resolved'", [user.id]);
   res.json({ ok: true });
 });
 
