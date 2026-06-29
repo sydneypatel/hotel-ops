@@ -126,9 +126,6 @@ When you add custom categories → emails with `category = 'OTHER'` are automati
 ### Backfill
 Settings → Import → choose 1–6 months → Claude classifies up to 200 emails from your Gmail history. Already-imported emails are skipped via `ON CONFLICT DO NOTHING`. Deleted emails (soft-deleted) are also skipped.
 
-### Soft delete
-Emails are never hard-deleted from the database. Deleting from the dashboard sets `deleted_at = NOW()`. This ensures re-imports don't resurface emails you've dismissed.
-
 ---
 
 ## Roadmap
