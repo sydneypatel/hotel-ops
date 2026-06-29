@@ -193,10 +193,10 @@ router.post('/reclassify', requireAuth(), async (req, res) => {
   const hotelNames       = configResult.rows[0]?.hotel_names || [];
 
   const queries = {
-    other:   "SELECT * FROM emails WHERE user_id = $1 AND category = 'OTHER' ORDER BY received_at DESC LIMIT 50",
-    unknown: "SELECT * FROM emails WHERE user_id = $1 AND hotel = 'Unknown' ORDER BY received_at DESC LIMIT 50",
-    both:    "SELECT * FROM emails WHERE user_id = $1 AND (category = 'OTHER' OR hotel = 'Unknown') ORDER BY received_at DESC LIMIT 50",
-    all:     "SELECT * FROM emails WHERE user_id = $1 ORDER BY received_at DESC LIMIT 100",
+    other:   "SELECT * FROM emails WHERE user_id = $1 AND category = 'OTHER' ORDER BY received_at DESC LIMIT 200",
+    unknown: "SELECT * FROM emails WHERE user_id = $1 AND hotel = 'Unknown' ORDER BY received_at DESC LIMIT 200",
+    both:    "SELECT * FROM emails WHERE user_id = $1 AND (category = 'OTHER' OR hotel = 'Unknown') ORDER BY received_at DESC LIMIT 200",
+    all:     "SELECT * FROM emails WHERE user_id = $1 ORDER BY received_at DESC LIMIT 500",
   };
 
   const emails = await db.query(queries[scope] || queries.both, [user.id]);
